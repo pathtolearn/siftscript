@@ -520,6 +520,7 @@ function App() {
                 onToggleFavorite={handleToggleFavorite}
                 onToggleArchive={handleToggleArchive}
                 onOpenVideo={(url) => window.open(url, '_blank')}
+                onDelete={handleBulkDelete}
               />
             </div>
           </div>

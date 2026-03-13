@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Heart, Archive, MoreHorizontal, ExternalLink, Clock, FileText } from 'lucide-react';
 import type { Transcript, Video, Category, Tag } from '../../types';
 
@@ -16,6 +16,7 @@ interface TranscriptListProps {
   onToggleFavorite: (transcriptId: string, favorite: boolean) => void;
   onToggleArchive: (transcriptId: string, archived: boolean) => void;
   onOpenVideo: (url: string) => void;
+  onDelete?: (transcriptIds: string[]) => void;
 }
 
 export function TranscriptList({
@@ -26,9 +27,87 @@ export function TranscriptList({
   onOpenDetail,
   onToggleFavorite,
   onToggleArchive,
-  onOpenVideo
+  onOpenVideo,
+  onDelete
 }: TranscriptListProps) {
+  const [focusedIndex, setFocusedIndex] = useState<number>(-1);
+  const tableRef = useRef<HTMLDivElement>(null);
   const allSelected = transcripts.length > 0 && transcripts.every(t => selectedIds.includes(t.transcript.transcriptId));
+
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    // Ignore if user is typing in an input
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+      return;
+    }
+
+    // j/k navigation
+    if (e.key === 'j' || e.key === 'k') {
+      e.preventDefault();
+      setFocusedIndex(prev => {
+        if (transcripts.length === 0) return -1;
+        
+        if (e.key === 'j') {
+          // Move down
+          const next = prev + 1;
+          return next >= transcripts.length ? transcripts.length - 1 : next;
+        } else {
+          // Move up
+          const next = prev - 1;
+          return next < 0 ? 0 : next;
+        }
+      });
+    }
+
+    // Enter to open detail
+    if (e.key === 'Enter' && focusedIndex >= 0 && focusedIndex < transcripts.length) {
+      e.preventDefault();
+      onOpenDetail(transcripts[focusedIndex].transcript.transcriptId);
+    }
+
+    // Space to toggle selection
+    if (e.key === ' ' && focusedIndex >= 0 && focusedIndex < transcripts.length) {
+      e.preventDefault();
+      const transcriptId = transcripts[focusedIndex].transcript.transcriptId;
+      onSelect(transcriptId, !selectedIds.includes(transcriptId));
+    }
+
+    // Ctrl/Cmd + A to select all
+    if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+      e.preventDefault();
+      onSelectAll(!allSelected);
+    }
+
+    // Delete to remove selected
+    if (e.key === 'Delete' && selectedIds.length > 0 && onDelete) {
+      e.preventDefault();
+      if (confirm(`Delete ${selectedIds.length} selected transcript(s)? This action cannot be undone.`)) {
+        onDelete(selectedIds);
+      }
+    }
+
+    // Shift + ? for help (we'll implement this later)
+    if (e.shiftKey && e.key === '?') {
+      e.preventDefault();
+      // Could show a keyboard shortcuts modal here
+      console.log('Keyboard shortcuts: j/k = navigate, Enter = open, Space = select, Ctrl+A = select all, Delete = delete');
+    }
+  }, [transcripts, focusedIndex, selectedIds, allSelected, onSelect, onSelectAll, onOpenDetail, onDelete]);
+
+  useEffect(() => {
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleKeyDown]);
+
+  // Focus the row when focusedIndex changes
+  useEffect(() => {
+    if (focusedIndex >= 0 && tableRef.current) {
+      const rows = tableRef.current.querySelectorAll('tbody tr');
+      if (rows[focusedIndex]) {
+        (rows[focusedIndex] as HTMLElement).focus();
+        rows[focusedIndex].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    }
+  }, [focusedIndex]);
 
   function formatDuration(wordCount: number): string {
     const minutes = Math.ceil(wordCount / 150); // Approx 150 words per minute
@@ -45,7 +124,7 @@ export function TranscriptList({
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto" ref={tableRef}>
         <table className="w-full">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
@@ -78,12 +157,14 @@ export function TranscriptList({
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
-            {transcripts.map(({ transcript, video, category, tags }) => (
+            {transcripts.map(({ transcript, video, category, tags }, index) => (
               <tr
                 key={transcript.transcriptId}
-                className={`hover:bg-gray-50 transition-colors ${
+                tabIndex={0}
+                onFocus={() => setFocusedIndex(index)}
+                className={`hover:bg-gray-50 transition-colors outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset ${
                   selectedIds.includes(transcript.transcriptId) ? 'bg-blue-50' : ''
-                }`}
+                } ${focusedIndex === index ? 'bg-gray-100' : ''}`}
               >
                 <td className="px-4 py-4">
                   <input
@@ -225,6 +306,12 @@ export function TranscriptList({
           <p className="text-xs text-gray-500">Try adjusting your search or filters</p>
         </div>
       )}
+      
+      {/* Keyboard shortcuts hint */}
+      <div className="px-4 py-2 bg-gray-50 border-t border-gray-200 text-xs text-gray-500 flex items-center justify-between">
+        <span>Keyboard shortcuts: j/k = navigate, Enter = open, Space = select, Ctrl+A = select all, Delete = delete</span>
+        <span>Shift+? for help</span>
+      </div>
     </div>
   );
 }
