@@ -8,6 +8,7 @@ import { SearchBar } from '../../components/transcript/SearchBar';
 import { FilterSidebar } from '../../components/filters/FilterSidebar';
 import { BulkActions } from '../../components/transcript/BulkActions';
 import { TranscriptDetail } from '../../components/transcript/TranscriptDetail';
+import { SemanticSearch } from '../../components/transcript/SemanticSearch';
 import { GeneralSettings } from '../../components/settings/GeneralSettings';
 import { ImportExport } from '../../components/settings/ImportExport';
 import { DataManagement } from '../../components/settings/DataManagement';
@@ -22,7 +23,8 @@ import {
   Clock,
   Heart,
   Archive,
-  FolderOpen
+  FolderOpen,
+  Brain
 } from 'lucide-react';
 
 function App() {
@@ -487,6 +489,20 @@ function App() {
                   </div>
                 )}
               </div>
+            </div>
+
+            {/* Semantic Search */}
+            <div className="mt-6 bg-white rounded-xl border border-gray-200 p-6">
+              <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <Brain className="w-5 h-5 text-gray-400" />
+                Semantic Search
+              </h2>
+              <SemanticSearch 
+                onResultClick={(transcriptId, startMs) => {
+                  handleOpenDetail(transcriptId);
+                  // Could also scroll to timestamp in detail view
+                }}
+              />
             </div>
           </div>
         ) : activeTab === 'library' ? (
