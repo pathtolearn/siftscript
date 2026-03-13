@@ -21,6 +21,7 @@ import { categoryRepository } from '../../lib/db/repositories/categoryRepository
 import { tagRepository } from '../../lib/db/repositories/tagRepository';
 import { formatTranscriptAsText, downloadText } from '../../lib/utils/export';
 import { CitationGenerator } from './CitationGenerator';
+import { Summarization } from './Summarization';
 import type { Transcript, Segment, Video, Category, Tag } from '../../types';
 
 interface TranscriptDetailProps {
@@ -314,6 +315,12 @@ export function TranscriptDetail({ transcriptId, onBack }: TranscriptDetailProps
           <CitationGenerator 
             video={video} 
             transcript={transcript}
+          />
+
+          {/* AI Summary */}
+          <Summarization
+            transcriptId={transcriptId}
+            video={video}
           />
 
           {/* Notes */}

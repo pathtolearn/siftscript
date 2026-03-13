@@ -122,7 +122,7 @@ export async function deleteTranscriptEmbeddings(transcriptId: string): Promise<
 }
 
 // Cosine similarity between two vectors
-function cosineSimilarity(a: number[], b: number[]): number {
+export function cosineSimilarity(a: number[], b: number[]): number {
   if (a.length !== b.length) {
     throw new Error('Vectors must have the same length');
   }
