@@ -22,6 +22,7 @@ import { tagRepository } from '../../lib/db/repositories/tagRepository';
 import { formatTranscriptAsText, downloadText } from '../../lib/utils/export';
 import { CitationGenerator } from './CitationGenerator';
 import { Summarization } from './Summarization';
+import { ChapterDetector } from './ChapterDetector';
 import type { Transcript, Segment, Video, Category, Tag } from '../../types';
 
 interface TranscriptDetailProps {
@@ -321,6 +322,15 @@ export function TranscriptDetail({ transcriptId, onBack }: TranscriptDetailProps
           <Summarization
             transcriptId={transcriptId}
             video={video}
+          />
+
+          {/* Chapter Detection */}
+          <ChapterDetector
+            segments={segments}
+            video={video}
+            onChapterClick={(startMs) => {
+              window.open(`${video.url}&t=${Math.floor(startMs / 1000)}s`, '_blank');
+            }}
           />
 
           {/* Notes */}
