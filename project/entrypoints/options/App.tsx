@@ -33,7 +33,10 @@ function App() {
     total: 0,
     favorites: 0,
     archived: 0,
-    recent: [] as Transcript[]
+    recent: [] as Array<{
+      transcript: Transcript;
+      video: Video | undefined;
+    }>
   });
   const [categories, setCategories] = useState<(Category & { count: number })[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -74,11 +77,19 @@ function App() {
         transcriptRepository.getRecent(5)
       ]);
 
+      // Load video data for recent transcripts
+      const enrichedRecent = await Promise.all(
+        recentData.map(async (transcript) => {
+          const video = await videoRepository.getById(transcript.videoId);
+          return { transcript, video };
+        })
+      );
+
       setStats({
         total: statsData.total,
         favorites: statsData.favorites,
         archived: statsData.archived,
-        recent: recentData
+        recent: enrichedRecent
       });
       setCategories(catsData);
     } catch (error) {
@@ -402,7 +413,7 @@ function App() {
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {stats.recent.map((transcript) => (
+                    {stats.recent.map(({ transcript, video }) => (
                       <div
                         key={transcript.transcriptId}
                         className="p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
@@ -411,9 +422,10 @@ function App() {
                         <div className="flex items-center justify-between">
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium text-gray-900 truncate">
-                              {transcript.videoId}
+                              {video?.title || transcript.videoId}
                             </p>
                             <p className="text-xs text-gray-500 mt-0.5">
+                              {video?.channelTitle && <span className="text-gray-700">{video.channelTitle} • </span>}
                               {transcript.languageCode} • {transcript.wordCount} words • {new Date(transcript.createdAt).toLocaleDateString()}
                             </p>
                           </div>
