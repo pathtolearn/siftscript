@@ -47,25 +47,36 @@ export default defineContentScript({
     messaging.registerHandler('FETCH_TRANSCRIPT', async (payload: FetchTranscriptPayload) => {
       console.log('Fetching transcript for video:', payload.videoId);
       
-      const result = await fetchTranscript(payload.videoId, payload.languageCode);
-      
-      if (result.state !== 'success') {
-        console.error('Transcript fetch failed:', result.error);
-        throw new Error(result.error || 'Failed to fetch transcript');
+      try {
+        const result = await fetchTranscript(payload.videoId, payload.languageCode);
+        
+        if (result.state !== 'success') {
+          console.error('Transcript fetch failed:', result.error);
+          throw new Error(result.error || 'Failed to fetch transcript');
+        }
+
+        // Validate that we actually got segments
+        if (!result.segments || result.segments.length === 0) {
+          console.error('Transcript fetch returned success but no segments');
+          throw new Error('Transcript fetch succeeded but returned no data');
+        }
+
+        console.log('Transcript fetched successfully:', {
+          segments: result.segments.length,
+          language: result.languageCode,
+          sourceType: result.sourceType
+        });
+
+        return {
+          segments: result.segments!,
+          languageCode: result.languageCode!,
+          languageLabel: result.languageLabel!,
+          sourceType: result.sourceType!
+        };
+      } catch (error) {
+        console.error('Error in FETCH_TRANSCRIPT handler:', error);
+        throw error;
       }
-
-      console.log('Transcript fetched successfully:', {
-        segments: result.segments?.length,
-        language: result.languageCode,
-        sourceType: result.sourceType
-      });
-
-      return {
-        segments: result.segments!,
-        languageCode: result.languageCode!,
-        languageLabel: result.languageLabel!,
-        sourceType: result.sourceType!
-      };
     });
 
     // Setup message listener

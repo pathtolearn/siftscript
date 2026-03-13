@@ -290,9 +290,14 @@ function App() {
       )}
 
       {saveStatus === 'error' && (
-        <div className="mb-3 p-2 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
-          <AlertCircle className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" />
-          <span className="text-xs text-red-700">{errorMessage}</span>
+        <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+          <div className="flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" />
+            <div className="flex-1">
+              <p className="text-xs font-medium text-red-800">Failed to save transcript</p>
+              <p className="text-xs text-red-700 mt-1">{errorMessage}</p>
+            </div>
+          </div>
         </div>
       )}
 

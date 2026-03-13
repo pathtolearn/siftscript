@@ -6,7 +6,8 @@ import { segmentRepository } from '../lib/db/repositories/segmentRepository';
 import { categoryRepository } from '../lib/db/repositories/categoryRepository';
 import type { 
   SaveTranscriptPayload,
-  OpenDashboardPayload
+  OpenDashboardPayload,
+  FetchTranscriptPayload
 } from '../lib/messaging/types';
 import type { Video, Transcript, Segment } from '../types';
 
@@ -44,8 +45,27 @@ export default defineBackground(() => {
     }
   });
 
+  messaging.registerHandler('FETCH_TRANSCRIPT', async (payload: FetchTranscriptPayload) => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id) {
+      throw new Error('No active tab found');
+    }
+
+    try {
+      const response = await messaging.sendMessageToTab(tab.id, 'FETCH_TRANSCRIPT', payload);
+      return response;
+    } catch (error) {
+      throw new Error(error instanceof Error ? error.message : 'Failed to fetch transcript from content script');
+    }
+  });
+
   messaging.registerHandler('SAVE_TRANSCRIPT', async (payload: SaveTranscriptPayload) => {
     const { videoContext, segments, languageCode, languageLabel, sourceType, categoryId } = payload;
+
+    // Validate that we have transcript data
+    if (!segments || segments.length === 0) {
+      throw new Error('Cannot save transcript: No transcript segments available');
+    }
 
     // Check for existing transcript
     const existingTranscript = await transcriptRepository.getByVideoAndLanguage(
