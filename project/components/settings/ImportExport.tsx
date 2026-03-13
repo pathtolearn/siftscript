@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
-import { Download, Upload, FileJson, FileText, FileSpreadsheet, Check, AlertCircle, Loader2 } from 'lucide-react';
+import { Download, Upload, FileJson, FileText, FileSpreadsheet, Check, AlertCircle, Loader2, BookOpen } from 'lucide-react';
 import { exportAllData, downloadJson, downloadText, downloadCsv, formatTranscriptAsText, formatTranscriptsAsCsv } from '../../lib/utils/export';
+import { exportTranscriptToObsidian, exportMultipleToObsidian } from '../../lib/utils/exportObsidian';
 import { importFromJson, parseImportFile, type ImportResult } from '../../lib/utils/import';
 import { transcriptRepository } from '../../lib/db/repositories/transcriptRepository';
 import { videoRepository } from '../../lib/db/repositories/videoRepository';
@@ -82,6 +83,43 @@ export function ImportExport() {
     }
   }
 
+  async function handleExportObsidian() {
+    try {
+      setIsExporting(true);
+      const transcripts = await transcriptRepository.getAll();
+      
+      const enriched = await Promise.all(
+        transcripts.map(async (transcript) => {
+          const video = await videoRepository.getById(transcript.videoId);
+          return { transcript, video: video! };
+        })
+      );
+      
+      const files = await exportMultipleToObsidian(enriched);
+      
+      // Download each file
+      for (const { filename, content } of files) {
+        const blob = new Blob([content], { type: 'text/markdown' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        // Small delay to prevent browser throttling
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    } catch (error) {
+      console.error('Export failed:', error);
+      alert('Export failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    } finally {
+      setIsExporting(false);
+    }
+  }
+
   async function handleImport() {
     if (!selectedFile) return;
 
@@ -150,6 +188,20 @@ export function ImportExport() {
             <div>
               <p className="font-medium text-gray-900">Metadata (CSV)</p>
               <p className="text-sm text-gray-500">Export metadata spreadsheet</p>
+            </div>
+          </button>
+
+          <button
+            onClick={handleExportObsidian}
+            disabled={isExporting}
+            className="flex items-center gap-3 p-4 border border-gray-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition-colors text-left"
+          >
+            <div className="w-10 h-10 bg-indigo-100 rounded-lg flex items-center justify-center flex-shrink-0">
+              <BookOpen className="w-5 h-5 text-indigo-600" />
+            </div>
+            <div>
+              <p className="font-medium text-gray-900">Obsidian (Markdown)</p>
+              <p className="text-sm text-gray-500">Export as Obsidian notes</p>
             </div>
           </button>
         </div>
