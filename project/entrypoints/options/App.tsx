@@ -11,6 +11,7 @@ import { TranscriptDetail } from '../../components/transcript/TranscriptDetail';
 import { GeneralSettings } from '../../components/settings/GeneralSettings';
 import { ImportExport } from '../../components/settings/ImportExport';
 import { DataManagement } from '../../components/settings/DataManagement';
+import { initializeTheme, listenToThemeChanges } from '../../lib/utils/theme';
 import type { Transcript, Category, SearchFilters, SortOption, Video, Tag } from '../../types';
 import { 
   Library, 
@@ -54,6 +55,18 @@ function App() {
   const [sort, setSort] = useState<SortOption>('newest');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [showFilters, setShowFilters] = useState(false);
+
+  useEffect(() => {
+    // Initialize theme on mount
+    initializeTheme();
+    
+    // Listen for system theme changes
+    const cleanup = listenToThemeChanges(() => {
+      // Theme will be automatically applied by the listener
+    });
+    
+    return cleanup;
+  }, []);
 
   useEffect(() => {
     if (activeTab === 'dashboard') {
