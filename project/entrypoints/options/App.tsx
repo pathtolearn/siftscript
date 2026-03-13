@@ -11,6 +11,7 @@ import { TranscriptDetail } from '../../components/transcript/TranscriptDetail';
 import { GeneralSettings } from '../../components/settings/GeneralSettings';
 import { ImportExport } from '../../components/settings/ImportExport';
 import { DataManagement } from '../../components/settings/DataManagement';
+import { NotionSettings } from '../../components/settings/NotionSettings';
 import { initializeTheme, listenToThemeChanges } from '../../lib/utils/theme';
 import type { Transcript, Category, SearchFilters, SortOption, Video, Tag } from '../../types';
 import { 
@@ -533,6 +534,12 @@ function App() {
               <div className="bg-white rounded-xl border border-gray-200 p-6">
                 <h3 className="text-lg font-medium text-gray-900 mb-4">General</h3>
                 <GeneralSettings />
+              </div>
+
+              {/* Notion Integration */}
+              <div className="bg-white rounded-xl border border-gray-200 p-6">
+                <h3 className="text-lg font-medium text-gray-900 mb-4">Notion Integration</h3>
+                <NotionSettings />
               </div>
 
               {/* Import/Export */}

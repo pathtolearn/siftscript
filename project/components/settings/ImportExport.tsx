@@ -1,7 +1,8 @@
 import { useState, useRef } from 'react';
-import { Download, Upload, FileJson, FileText, FileSpreadsheet, Check, AlertCircle, Loader2, BookOpen } from 'lucide-react';
+import { Download, Upload, FileJson, FileText, FileSpreadsheet, Check, AlertCircle, Loader2, BookOpen, FileText as NotionIcon } from 'lucide-react';
 import { exportAllData, downloadJson, downloadText, downloadCsv, formatTranscriptAsText, formatTranscriptsAsCsv } from '../../lib/utils/export';
 import { exportTranscriptToObsidian, exportMultipleToObsidian } from '../../lib/utils/exportObsidian';
+import { exportTranscriptToNotion, getNotionToken } from '../../lib/utils/exportNotion';
 import { importFromJson, parseImportFile, type ImportResult } from '../../lib/utils/import';
 import { transcriptRepository } from '../../lib/db/repositories/transcriptRepository';
 import { videoRepository } from '../../lib/db/repositories/videoRepository';
@@ -120,6 +121,50 @@ export function ImportExport() {
     }
   }
 
+  async function handleExportNotion() {
+    const token = getNotionToken();
+    if (!token) {
+      alert('Please configure your Notion integration in Settings first');
+      return;
+    }
+
+    try {
+      setIsExporting(true);
+      const transcripts = await transcriptRepository.getAll();
+      let successCount = 0;
+      let errorCount = 0;
+      const errors: string[] = [];
+
+      for (const transcript of transcripts) {
+        const video = await videoRepository.getById(transcript.videoId);
+        if (!video) continue;
+
+        const result = await exportTranscriptToNotion(transcript, video);
+        if (result.success) {
+          successCount++;
+        } else {
+          errorCount++;
+          if (result.error) errors.push(video.title + ': ' + result.error);
+        }
+        
+        // Small delay to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 350));
+      }
+
+      if (errorCount > 0) {
+        console.error('Notion export errors:', errors);
+        alert(`Exported ${successCount} transcripts successfully. ${errorCount} failed.`);
+      } else {
+        alert(`Successfully exported ${successCount} transcripts to Notion!`);
+      }
+    } catch (error) {
+      console.error('Export failed:', error);
+      alert('Export failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    } finally {
+      setIsExporting(false);
+    }
+  }
+
   async function handleImport() {
     if (!selectedFile) return;
 
@@ -202,6 +247,20 @@ export function ImportExport() {
             <div>
               <p className="font-medium text-gray-900">Obsidian (Markdown)</p>
               <p className="text-sm text-gray-500">Export as Obsidian notes</p>
+            </div>
+          </button>
+
+          <button
+            onClick={handleExportNotion}
+            disabled={isExporting}
+            className="flex items-center gap-3 p-4 border border-gray-200 rounded-lg hover:border-slate-300 hover:bg-slate-50 transition-colors text-left"
+          >
+            <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center flex-shrink-0">
+              <NotionIcon className="w-5 h-5 text-slate-600" />
+            </div>
+            <div>
+              <p className="font-medium text-gray-900">Notion</p>
+              <p className="text-sm text-gray-500">Export to Notion workspace</p>
             </div>
           </button>
         </div>
