@@ -20,6 +20,7 @@ import { videoRepository } from '../../lib/db/repositories/videoRepository';
 import { categoryRepository } from '../../lib/db/repositories/categoryRepository';
 import { tagRepository } from '../../lib/db/repositories/tagRepository';
 import { formatTranscriptAsText, downloadText } from '../../lib/utils/export';
+import { CitationGenerator } from './CitationGenerator';
 import type { Transcript, Segment, Video, Category, Tag } from '../../types';
 
 interface TranscriptDetailProps {
@@ -309,6 +310,12 @@ export function TranscriptDetail({ transcriptId, onBack }: TranscriptDetailProps
 
         {/* Sidebar */}
         <div className="space-y-6">
+          {/* Citation Generator */}
+          <CitationGenerator 
+            video={video} 
+            transcript={transcript}
+          />
+
           {/* Notes */}
           <div className="bg-white rounded-xl border border-gray-200 p-4">
             <div className="flex items-center justify-between mb-3">
