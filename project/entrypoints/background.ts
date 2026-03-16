@@ -1,10 +1,12 @@
 import { messaging } from '../lib/messaging/messaging';
-import { initializeDatabase } from '../lib/db/schema';
+import { initializeDatabase, db } from '../lib/db/schema';
 import { videoRepository } from '../lib/db/repositories/videoRepository';
 import { transcriptRepository } from '../lib/db/repositories/transcriptRepository';
 import { segmentRepository } from '../lib/db/repositories/segmentRepository';
 import { categoryRepository } from '../lib/db/repositories/categoryRepository';
-import type { 
+import { annotationRepository } from '../lib/db/repositories/annotationRepository';
+import { SaveTranscriptPayloadSchema, validateOrThrow } from '../lib/validation/schemas';
+import type {
   SaveTranscriptPayload,
   OpenDashboardPayload,
   FetchTranscriptPayload
@@ -60,11 +62,15 @@ export default defineBackground(() => {
   });
 
   messaging.registerHandler('SAVE_TRANSCRIPT', async (payload: SaveTranscriptPayload) => {
-    const { videoContext, segments, languageCode, languageLabel, sourceType, categoryId } = payload;
+    // Validate payload with Zod
+    const validated = validateOrThrow(SaveTranscriptPayloadSchema, payload, 'SAVE_TRANSCRIPT');
+    const { videoContext, segments, languageCode, languageLabel, sourceType, categoryId } = validated;
 
-    // Validate that we have transcript data
-    if (!segments || segments.length === 0) {
-      throw new Error('Cannot save transcript: No transcript segments available');
+    // Get or create uncategorized category (outside transaction)
+    let finalCategoryId = categoryId;
+    if (!finalCategoryId) {
+      const uncategorized = await categoryRepository.getOrCreateUncategorized();
+      finalCategoryId = uncategorized.categoryId;
     }
 
     // Check for existing transcript
@@ -74,103 +80,98 @@ export default defineBackground(() => {
     );
 
     const now = new Date();
-    const isNew = !existingTranscript;
-
-    // Save video metadata
-    const video: Video = {
-      videoId: videoContext.videoId,
-      url: videoContext.url,
-      title: videoContext.title,
-      channelId: videoContext.channelId,
-      channelTitle: videoContext.channelTitle,
-      thumbnailUrl: videoContext.thumbnailUrl,
-      publishedAt: videoContext.publishedAt ? new Date(videoContext.publishedAt) : now,
-      durationText: videoContext.durationText,
-      lastSeenAt: now
-    };
-    await videoRepository.upsert(video);
-
-    // Get or create uncategorized category
-    let finalCategoryId = categoryId;
-    if (!finalCategoryId) {
-      const uncategorized = await categoryRepository.getOrCreateUncategorized();
-      finalCategoryId = uncategorized.categoryId;
-    }
 
     // Calculate metadata
     const fullText = segments.map(s => s.text).join(' ');
     const wordCount = fullText.split(/\s+/).length;
 
-    if (existingTranscript) {
-      // Update existing transcript
-      await transcriptRepository.update(existingTranscript.transcriptId, {
-        fullText,
-        segmentCount: segments.length,
-        wordCount,
-        updatedAt: now,
-        fetchState: 'success',
-        fetchErrorCode: null
-      });
-
-      // Delete old segments and add new ones
-      await segmentRepository.deleteByTranscriptId(existingTranscript.transcriptId);
-      
-      const newSegments: Segment[] = segments.map((seg, index) => ({
-        segmentId: `${existingTranscript.transcriptId}-seg-${index}`,
-        transcriptId: existingTranscript.transcriptId,
-        sequence: index,
-        startMs: seg.startMs,
-        durationMs: seg.durationMs,
-        text: seg.text
-      }));
-      await segmentRepository.createMany(newSegments);
-
-      return { 
-        transcriptId: existingTranscript.transcriptId,
-        isNew: false
-      };
-    } else {
-      // Create new transcript
-      const transcriptId = `transcript-${videoContext.videoId}-${languageCode}-${Date.now()}`;
-      
-      const transcript: Transcript = {
-        transcriptId,
+    // Wrap multi-table writes in a Dexie transaction
+    return await db.transaction('rw', db.videos, db.transcripts, db.segments, db.categories, async () => {
+      // Save video metadata
+      const video: Video = {
         videoId: videoContext.videoId,
-        languageCode,
-        languageLabel,
-        sourceType,
-        fullText,
-        segmentCount: segments.length,
-        wordCount,
-        createdAt: now,
-        updatedAt: now,
-        lastOpenedAt: now,
-        status: 'unread',
-        favorite: false,
-        archived: false,
-        categoryId: finalCategoryId,
-        notes: '',
-        fetchState: 'success',
-        fetchErrorCode: null
+        url: videoContext.url,
+        title: videoContext.title,
+        channelId: videoContext.channelId,
+        channelTitle: videoContext.channelTitle,
+        thumbnailUrl: videoContext.thumbnailUrl,
+        publishedAt: videoContext.publishedAt ? new Date(videoContext.publishedAt) : now,
+        durationText: videoContext.durationText,
+        lastSeenAt: now
       };
-      await transcriptRepository.create(transcript);
+      await videoRepository.upsert(video);
 
-      // Save segments
-      const newSegments: Segment[] = segments.map((seg, index) => ({
-        segmentId: `${transcriptId}-seg-${index}`,
-        transcriptId,
-        sequence: index,
-        startMs: seg.startMs,
-        durationMs: seg.durationMs,
-        text: seg.text
-      }));
-      await segmentRepository.createMany(newSegments);
+      if (existingTranscript) {
+        // Update existing transcript
+        await transcriptRepository.update(existingTranscript.transcriptId, {
+          fullText,
+          segmentCount: segments.length,
+          wordCount,
+          updatedAt: now,
+          fetchState: 'success',
+          fetchErrorCode: null
+        });
 
-      return { 
-        transcriptId,
-        isNew: true
-      };
-    }
+        // Delete old segments and add new ones
+        await segmentRepository.deleteByTranscriptId(existingTranscript.transcriptId);
+
+        const newSegments: Segment[] = segments.map((seg, index) => ({
+          segmentId: `${existingTranscript.transcriptId}-seg-${index}`,
+          transcriptId: existingTranscript.transcriptId,
+          sequence: index,
+          startMs: seg.startMs,
+          durationMs: seg.durationMs,
+          text: seg.text
+        }));
+        await segmentRepository.createMany(newSegments);
+
+        return {
+          transcriptId: existingTranscript.transcriptId,
+          isNew: false
+        };
+      } else {
+        // Create new transcript
+        const transcriptId = `transcript-${videoContext.videoId}-${languageCode}-${Date.now()}`;
+
+        const transcript: Transcript = {
+          transcriptId,
+          videoId: videoContext.videoId,
+          languageCode,
+          languageLabel,
+          sourceType,
+          fullText,
+          segmentCount: segments.length,
+          wordCount,
+          createdAt: now,
+          updatedAt: now,
+          lastOpenedAt: now,
+          status: 'unread',
+          favorite: false,
+          archived: false,
+          categoryId: finalCategoryId,
+          notes: '',
+          fetchState: 'success',
+          fetchErrorCode: null
+        };
+        await transcriptRepository.create(transcript);
+
+        // Save segments
+        const newSegments: Segment[] = segments.map((seg, index) => ({
+          segmentId: `${transcriptId}-seg-${index}`,
+          transcriptId,
+          sequence: index,
+          startMs: seg.startMs,
+          durationMs: seg.durationMs,
+          text: seg.text
+        }));
+        await segmentRepository.createMany(newSegments);
+
+        return {
+          transcriptId,
+          isNew: true
+        };
+      }
+    });
   });
 
   messaging.registerHandler('OPEN_DASHBOARD', async (payload: OpenDashboardPayload) => {
@@ -180,6 +181,30 @@ export default defineBackground(() => {
 
   messaging.registerHandler('PING', async () => {
     return { pong: true };
+  });
+
+  messaging.registerHandler('GET_SIDEBAR_DATA', async (payload: { videoId: string }) => {
+    const transcripts = await transcriptRepository.getByVideoId(payload.videoId);
+    if (transcripts.length === 0) {
+      return { transcript: null, video: null, segments: [], annotations: [] };
+    }
+    const t = transcripts[0];
+    const [video, segments, annotations] = await Promise.all([
+      videoRepository.getById(t.videoId),
+      segmentRepository.getByTranscriptId(t.transcriptId),
+      annotationRepository.getByTranscriptId(t.transcriptId)
+    ]);
+    return {
+      transcript: { transcriptId: t.transcriptId, videoId: t.videoId, wordCount: t.wordCount, notes: t.notes },
+      video: video ? { title: video.title, channelTitle: video.channelTitle } : null,
+      segments: segments.map(s => ({ segmentId: s.segmentId, startMs: s.startMs, text: s.text })),
+      annotations: annotations.map(a => ({ annotationId: a.annotationId, segmentId: a.segmentId, color: a.color, note: a.note }))
+    };
+  });
+
+  messaging.registerHandler('SAVE_SIDEBAR_NOTES', async (payload: { transcriptId: string; notes: string }) => {
+    await transcriptRepository.update(payload.transcriptId, { notes: payload.notes, updatedAt: new Date() });
+    return null;
   });
 
   // Setup message listener

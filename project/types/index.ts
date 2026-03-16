@@ -79,14 +79,16 @@ export interface AppSettings {
 }
 
 // Message types
-export type MessageType = 
+export type MessageType =
   | 'GET_CURRENT_VIDEO_CONTEXT'
   | 'FETCH_TRANSCRIPT'
   | 'SAVE_TRANSCRIPT'
   | 'REFETCH_TRANSCRIPT'
   | 'OPEN_DASHBOARD'
   | 'EXPORT_DATA'
-  | 'PING';
+  | 'PING'
+  | 'GET_SIDEBAR_DATA'
+  | 'SAVE_SIDEBAR_NOTES';
 
 export interface ExtensionMessage {
   type: MessageType;
@@ -164,6 +166,45 @@ export interface TranscriptListItem {
   favorite: boolean;
   archived: boolean;
   wordCount: number;
+}
+
+// Annotation types
+export type AnnotationColor = 'yellow' | 'green' | 'blue' | 'pink' | 'orange' | 'purple';
+
+export interface Annotation {
+  annotationId: string;
+  segmentId: string;
+  transcriptId: string;
+  color: AnnotationColor;
+  note: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// AI types
+export type AIProvider = 'openai' | 'anthropic' | 'google' | 'ollama';
+
+export interface AISettings {
+  provider: AIProvider;
+  apiKey: string;
+  model: string;
+  baseUrl?: string; // For Ollama
+}
+
+export interface Summary {
+  summaryId: string;
+  transcriptId: string;
+  provider: AIProvider;
+  model: string;
+  overallSummary: string;
+  keyPoints: string[];
+  highlights: Array<{
+    startMs: number;
+    text: string;
+    summary: string;
+  }>;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 // Export types

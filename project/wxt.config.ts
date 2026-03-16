@@ -12,8 +12,13 @@ export default defineConfig({
       'tabs'
     ],
     host_permissions: [
-      'https://www.youtube.com/*'
+      'https://www.youtube.com/*',
+      'https://api.openai.com/*',
+      'https://api.anthropic.com/*'
     ],
+    content_security_policy: {
+      extension_pages: "script-src 'self'; object-src 'self'"
+    },
     action: {
       default_popup: 'popup.html',
       default_title: 'YouTube Transcript Manager'

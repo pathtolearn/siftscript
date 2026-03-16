@@ -11,6 +11,7 @@
     "build:firefox": "wxt build -b firefox && node scripts/fix-paths.mjs",
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
+    "test": "vitest run",
     "compile": "tsc --noEmit",
     "postinstall": "wxt prepare"
   },
@@ -42,6 +43,7 @@
     "postcss": "^8.5.8",
     "tailwindcss": "^4.2.1",
     "typescript": "^5.9.3",
+    "vitest": "^4.1.0",
     "wxt": "^0.20.18"
   }
 }

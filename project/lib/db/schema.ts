@@ -1,13 +1,16 @@
 import Dexie, { Table } from 'dexie';
-import type { 
-  Video, 
-  Transcript, 
-  Segment, 
-  Category, 
-  Tag, 
+import type {
+  Video,
+  Transcript,
+  Segment,
+  Category,
+  Tag,
   TranscriptTag,
-  AppSettings 
+  Annotation,
+  Summary,
+  AppSettings
 } from '../../types';
+import { migrateFromLocalStorage, SECURE_KEYS } from '../utils/secureStorage';
 
 export class TranscriptDatabase extends Dexie {
   videos!: Table<Video>;
@@ -16,11 +19,13 @@ export class TranscriptDatabase extends Dexie {
   categories!: Table<Category>;
   tags!: Table<Tag>;
   transcriptTags!: Table<TranscriptTag>;
+  annotations!: Table<Annotation>;
+  summaries!: Table<Summary>;
   settings!: Table<{ key: string; value: unknown }>;
 
   constructor() {
     super('YouTubeTranscriptManager');
-    
+
     this.version(1).stores({
       videos: 'videoId, title, channelTitle, publishedAt, lastSeenAt',
       transcripts: 'transcriptId, videoId, languageCode, status, favorite, archived, categoryId, createdAt, updatedAt, lastOpenedAt',
@@ -29,6 +34,20 @@ export class TranscriptDatabase extends Dexie {
       tags: 'tagId, name',
       transcriptTags: 'id, transcriptId, tagId, [transcriptId+tagId]',
       settings: 'key'
+    });
+
+    this.version(2).stores({
+      videos: 'videoId, title, channelTitle, publishedAt, lastSeenAt',
+      transcripts: 'transcriptId, videoId, languageCode, status, favorite, archived, categoryId, createdAt, updatedAt, lastOpenedAt',
+      segments: 'segmentId, transcriptId, sequence, [transcriptId+sequence]',
+      categories: 'categoryId, name',
+      tags: 'tagId, name',
+      transcriptTags: 'id, transcriptId, tagId, [transcriptId+tagId]',
+      annotations: 'annotationId, segmentId, transcriptId, [transcriptId+segmentId], color, createdAt',
+      summaries: 'summaryId, transcriptId, provider, createdAt',
+      settings: 'key'
+    }).upgrade(trans => {
+      console.log('Migrating from v1 to v2: adding annotations and summaries tables');
     });
   }
 }
@@ -90,6 +109,12 @@ export async function initializeDatabase(): Promise<void> {
 
 // Migration helpers
 export async function runMigrations(): Promise<void> {
-  // Future migrations will go here
+  // Migrate AI settings from localStorage to secure storage
+  try {
+    await migrateFromLocalStorage('ai_settings', SECURE_KEYS.AI_API_KEY);
+  } catch (error) {
+    console.warn('AI settings migration skipped:', error instanceof Error ? error.message : error);
+  }
+
   console.log('Database migrations completed');
 }

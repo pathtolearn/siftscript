@@ -84,6 +84,19 @@ export interface MessageDefinitions {
     payload: {};
     response: { pong: true };
   };
+  GET_SIDEBAR_DATA: {
+    payload: { videoId: string };
+    response: {
+      transcript: { transcriptId: string; videoId: string; wordCount: number; notes: string } | null;
+      video: { title: string; channelTitle: string } | null;
+      segments: Array<{ segmentId: string; startMs: number; text: string }>;
+      annotations: Array<{ annotationId: string; segmentId: string; color: string; note: string }>;
+    };
+  };
+  SAVE_SIDEBAR_NOTES: {
+    payload: { transcriptId: string; notes: string };
+    response: null;
+  };
 }
 
 // Helper type to extract payload/response for a specific message type

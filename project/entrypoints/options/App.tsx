@@ -3,35 +3,27 @@ import { transcriptRepository } from '../../lib/db/repositories/transcriptReposi
 import { categoryRepository } from '../../lib/db/repositories/categoryRepository';
 import { videoRepository } from '../../lib/db/repositories/videoRepository';
 import { tagRepository } from '../../lib/db/repositories/tagRepository';
-import { TranscriptList } from '../../components/transcript/TranscriptList';
-import { SearchBar } from '../../components/transcript/SearchBar';
-import { FilterSidebar } from '../../components/filters/FilterSidebar';
+import { segmentRepository } from '../../lib/db/repositories/segmentRepository';
 import { BulkActions } from '../../components/transcript/BulkActions';
 import { TranscriptDetail } from '../../components/transcript/TranscriptDetail';
-import { SemanticSearch } from '../../components/transcript/SemanticSearch';
-import { GeneralSettings } from '../../components/settings/GeneralSettings';
-import { ImportExport } from '../../components/settings/ImportExport';
-import { DataManagement } from '../../components/settings/DataManagement';
-import { NotionSettings } from '../../components/settings/NotionSettings';
+import { DashboardView } from '../../components/dashboard/DashboardView';
+import { LibraryView } from '../../components/dashboard/LibraryView';
+import { SettingsView } from '../../components/settings/SettingsView';
+import { ErrorBoundary } from '../../components/ui/ErrorBoundary';
 import { initializeTheme, listenToThemeChanges } from '../../lib/utils/theme';
-import type { Transcript, Category, SearchFilters, SortOption, Video, Tag } from '../../types';
-import { 
-  Library, 
-  Settings, 
-  LayoutDashboard, 
+import type { Transcript, Category, SearchFilters, SortOption, Video, Tag, Segment } from '../../types';
+import {
+  Library,
+  Settings,
+  LayoutDashboard,
   FileText,
-  Clock,
-  Heart,
-  Archive,
-  FolderOpen,
-  Brain
 } from 'lucide-react';
 
 function App() {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'library' | 'settings'>('dashboard');
   const [view, setView] = useState<'dashboard' | 'library' | 'detail'>('dashboard');
   const [detailTranscriptId, setDetailTranscriptId] = useState<string | null>(null);
-  
+
   // Dashboard state
   const [stats, setStats] = useState({
     total: 0,
@@ -44,7 +36,7 @@ function App() {
   });
   const [categories, setCategories] = useState<(Category & { count: number })[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  
+
   // Library state
   const [transcripts, setTranscripts] = useState<Array<{
     transcript: Transcript;
@@ -58,16 +50,23 @@ function App() {
   const [sort, setSort] = useState<SortOption>('newest');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [showFilters, setShowFilters] = useState(false);
+  const [segmentResults, setSegmentResults] = useState<Array<{
+    transcriptId: string;
+    video: Video | undefined;
+    segments: Segment[];
+    totalMatches: number;
+  }>>([]);
+  const [isSearchingSegments, setIsSearchingSegments] = useState(false);
 
   useEffect(() => {
     // Initialize theme on mount
     initializeTheme();
-    
+
     // Listen for system theme changes
     const cleanup = listenToThemeChanges(() => {
       // Theme will be automatically applied by the listener
     });
-    
+
     return cleanup;
   }, []);
 
@@ -82,6 +81,7 @@ function App() {
 
   useEffect(() => {
     applyFiltersAndSearch();
+    performSegmentSearch();
   }, [searchQuery, filters, sort, transcripts]);
 
   async function loadDashboardData() {
@@ -119,7 +119,7 @@ function App() {
     try {
       setIsLoading(true);
       const allTranscripts = await transcriptRepository.getAll();
-      
+
       // Load related data for each transcript
       const enriched = await Promise.all(
         allTranscripts.map(async (transcript) => {
@@ -128,11 +128,11 @@ function App() {
             transcript.categoryId ? categoryRepository.getById(transcript.categoryId) : Promise.resolve(undefined),
             tagRepository.getTagsForTranscript(transcript.transcriptId)
           ]);
-          
+
           return { transcript, video, category, tags };
         })
       );
-      
+
       setTranscripts(enriched);
     } catch (error) {
       console.error('Error loading library:', error);
@@ -155,7 +155,7 @@ function App() {
           ...tags.map(t => t.name),
           transcript.notes
         ].join(' ').toLowerCase();
-        
+
         return searchText.includes(query);
       });
     }
@@ -202,9 +202,39 @@ function App() {
     setFilteredTranscripts(filtered);
   }
 
+  async function performSegmentSearch() {
+    const query = searchQuery.trim();
+    if (query.length < 3) {
+      setSegmentResults([]);
+      return;
+    }
+
+    setIsSearchingSegments(true);
+    try {
+      const results = await segmentRepository.searchAcrossTranscripts(query);
+      const enriched = await Promise.all(
+        Array.from(results.entries()).map(async ([transcriptId, segments]) => {
+          const transcript = await transcriptRepository.getById(transcriptId);
+          const video = transcript ? await videoRepository.getById(transcript.videoId) : undefined;
+          return {
+            transcriptId,
+            video,
+            segments: segments.slice(0, 5), // Show max 5 preview segments
+            totalMatches: segments.length
+          };
+        })
+      );
+      setSegmentResults(enriched.filter(r => r.video));
+    } catch (error) {
+      console.error('Segment search error:', error);
+    } finally {
+      setIsSearchingSegments(false);
+    }
+  }
+
   function handleSelect(id: string, selected: boolean) {
-    setSelectedIds(prev => 
-      selected 
+    setSelectedIds(prev =>
+      selected
         ? [...prev, id]
         : prev.filter(i => i !== id)
     );
@@ -269,7 +299,7 @@ function App() {
 
   async function handleBulkDelete() {
     if (!confirm(`Are you sure you want to delete ${selectedIds.length} transcript(s)?`)) return;
-    
+
     for (const id of selectedIds) {
       await transcriptRepository.delete(id);
     }
@@ -280,6 +310,26 @@ function App() {
   async function handleBulkChangeCategory(categoryId: string) {
     for (const id of selectedIds) {
       await transcriptRepository.update(id, { categoryId });
+    }
+    setSelectedIds([]);
+    loadLibraryData();
+  }
+
+  async function handleBulkAddTags(tagIds: string[]) {
+    for (const transcriptId of selectedIds) {
+      for (const tagId of tagIds) {
+        await tagRepository.addTagToTranscript(transcriptId, tagId);
+      }
+    }
+    setSelectedIds([]);
+    loadLibraryData();
+  }
+
+  async function handleBulkRemoveTags(tagIds: string[]) {
+    for (const transcriptId of selectedIds) {
+      for (const tagId of tagIds) {
+        await tagRepository.removeTagFromTranscript(transcriptId, tagId);
+      }
     }
     setSelectedIds([]);
     loadLibraryData();
@@ -357,219 +407,50 @@ function App() {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {view === 'detail' && detailTranscriptId ? (
-          <TranscriptDetail 
-            transcriptId={detailTranscriptId} 
-            onBack={handleBackToLibrary} 
-          />
+          <ErrorBoundary>
+            <TranscriptDetail
+              transcriptId={detailTranscriptId}
+              onBack={handleBackToLibrary}
+            />
+          </ErrorBoundary>
         ) : activeTab === 'dashboard' ? (
-          <div className="space-y-6">
-            {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="bg-white p-6 rounded-xl border border-gray-200">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                    <FileText className="w-5 h-5 text-blue-600" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-600">Total Transcripts</p>
-                    <p className="text-2xl font-semibold text-gray-900">{stats.total}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white p-6 rounded-xl border border-gray-200">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
-                    <Heart className="w-5 h-5 text-red-600" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-600">Favorites</p>
-                    <p className="text-2xl font-semibold text-gray-900">{stats.favorites}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white p-6 rounded-xl border border-gray-200">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
-                    <Archive className="w-5 h-5 text-gray-600" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-600">Archived</p>
-                    <p className="text-2xl font-semibold text-gray-900">{stats.archived}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white p-6 rounded-xl border border-gray-200">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
-                    <FolderOpen className="w-5 h-5 text-purple-600" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-600">Categories</p>
-                    <p className="text-2xl font-semibold text-gray-900">{categories.length}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Recent & Categories */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Recent Transcripts */}
-              <div className="bg-white rounded-xl border border-gray-200 p-6">
-                <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                  <Clock className="w-5 h-5 text-gray-400" />
-                  Recent Transcripts
-                </h2>
-                {stats.recent.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">
-                    <p>No transcripts saved yet</p>
-                    <p className="text-sm mt-1">Navigate to a YouTube video and save your first transcript</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {stats.recent.map(({ transcript, video }) => (
-                      <div
-                        key={transcript.transcriptId}
-                        className="p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
-                        onClick={() => handleOpenDetail(transcript.transcriptId)}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-900 truncate">
-                              {video?.title || transcript.videoId}
-                            </p>
-                            <p className="text-xs text-gray-500 mt-0.5">
-                              {video?.channelTitle && <span className="text-gray-700">{video.channelTitle} • </span>}
-                              {transcript.languageCode} • {transcript.wordCount} words • {new Date(transcript.createdAt).toLocaleDateString()}
-                            </p>
-                          </div>
-                          {transcript.favorite && (
-                            <Heart className="w-4 h-4 text-red-500 fill-red-500" />
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Categories */}
-              <div className="bg-white rounded-xl border border-gray-200 p-6">
-                <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                  <FolderOpen className="w-5 h-5 text-gray-400" />
-                  Categories
-                </h2>
-                {categories.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">
-                    <p>No categories yet</p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {categories.map((category) => (
-                      <div
-                        key={category.categoryId}
-                        className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div 
-                            className="w-3 h-3 rounded-full"
-                            style={{ backgroundColor: category.colorToken === 'gray' ? '#9ca3af' : category.colorToken }}
-                          />
-                          <span className="text-sm font-medium text-gray-900">
-                            {category.name}
-                          </span>
-                        </div>
-                        <span className="text-sm text-gray-500">
-                          {category.count} transcripts
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Semantic Search */}
-            <div className="mt-6 bg-white rounded-xl border border-gray-200 p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                <Brain className="w-5 h-5 text-gray-400" />
-                Semantic Search
-              </h2>
-              <SemanticSearch 
-                onResultClick={(transcriptId, startMs) => {
-                  handleOpenDetail(transcriptId);
-                  // Could also scroll to timestamp in detail view
-                }}
-              />
-            </div>
-          </div>
+          <ErrorBoundary>
+            <DashboardView
+              stats={stats}
+              categories={categories}
+              onOpenDetail={handleOpenDetail}
+            />
+          </ErrorBoundary>
         ) : activeTab === 'library' ? (
-          <div className="flex gap-6">
-            <FilterSidebar
+          <ErrorBoundary>
+            <LibraryView
+              transcripts={transcripts}
+              filteredTranscripts={filteredTranscripts}
+              searchQuery={searchQuery}
               filters={filters}
               sort={sort}
+              selectedIds={selectedIds}
+              showFilters={showFilters}
+              segmentResults={segmentResults}
+              isSearchingSegments={isSearchingSegments}
+              onSearchChange={setSearchQuery}
               onFilterChange={setFilters}
               onSortChange={setSort}
               onClearFilters={clearFilters}
-              isOpen={showFilters}
-              onClose={() => setShowFilters(false)}
+              onToggleFilters={() => setShowFilters(!showFilters)}
+              onSelect={handleSelect}
+              onSelectAll={handleSelectAll}
+              onOpenDetail={handleOpenDetail}
+              onToggleFavorite={handleToggleFavorite}
+              onToggleArchive={handleToggleArchive}
+              onOpenVideo={(url) => window.open(url, '_blank')}
+              onDelete={handleBulkDelete}
             />
-            
-            <div className="flex-1 min-w-0">
-              <div className="mb-6">
-                <SearchBar
-                  value={searchQuery}
-                  onChange={setSearchQuery}
-                  onFilterToggle={() => setShowFilters(!showFilters)}
-                  placeholder="Search by title, channel, transcript text, or tags..."
-                  resultCount={filteredTranscripts.length}
-                />
-              </div>
-              
-              <TranscriptList
-                transcripts={filteredTranscripts}
-                selectedIds={selectedIds}
-                onSelect={handleSelect}
-                onSelectAll={handleSelectAll}
-                onOpenDetail={handleOpenDetail}
-                onToggleFavorite={handleToggleFavorite}
-                onToggleArchive={handleToggleArchive}
-                onOpenVideo={(url) => window.open(url, '_blank')}
-                onDelete={handleBulkDelete}
-              />
-            </div>
-          </div>
+          </ErrorBoundary>
         ) : (
-          <div className="max-w-3xl">
-            <h2 className="text-2xl font-bold text-gray-900 mb-6">Settings</h2>
-            
-            <div className="space-y-8">
-              {/* General Settings */}
-              <div className="bg-white rounded-xl border border-gray-200 p-6">
-                <h3 className="text-lg font-medium text-gray-900 mb-4">General</h3>
-                <GeneralSettings />
-              </div>
-
-              {/* Notion Integration */}
-              <div className="bg-white rounded-xl border border-gray-200 p-6">
-                <h3 className="text-lg font-medium text-gray-900 mb-4">Notion Integration</h3>
-                <NotionSettings />
-              </div>
-
-              {/* Import/Export */}
-              <div className="bg-white rounded-xl border border-gray-200 p-6">
-                <ImportExport />
-              </div>
-
-              {/* Data Management */}
-              <div className="bg-white rounded-xl border border-gray-200 p-6">
-                <h3 className="text-lg font-medium text-gray-900 mb-4">Data Management</h3>
-                <DataManagement />
-              </div>
-            </div>
-          </div>
+          <ErrorBoundary>
+            <SettingsView />
+          </ErrorBoundary>
         )}
       </main>
 
@@ -582,8 +463,8 @@ function App() {
         onUnfavorite={handleBulkUnfavorite}
         onDelete={handleBulkDelete}
         onChangeCategory={handleBulkChangeCategory}
-        onAddTags={() => {}}
-        onRemoveTags={() => {}}
+        onAddTags={handleBulkAddTags}
+        onRemoveTags={handleBulkRemoveTags}
         onClearSelection={() => setSelectedIds([])}
       />
     </div>

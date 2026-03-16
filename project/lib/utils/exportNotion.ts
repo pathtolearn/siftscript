@@ -1,7 +1,8 @@
-import type { Video, Transcript, Segment } from '../../types';
+import type { Video, Transcript, Segment, Annotation } from '../../types';
 import { segmentRepository } from '../db/repositories/segmentRepository';
 import { categoryRepository } from '../db/repositories/categoryRepository';
 import { tagRepository } from '../db/repositories/tagRepository';
+import { annotationRepository } from '../db/repositories/annotationRepository';
 
 // Notion API types
 interface NotionBlock {
@@ -20,6 +21,7 @@ export interface NotionExportOptions {
   includeTimestamps: boolean;
   includeMetadata: boolean;
   includeNotes: boolean;
+  includeAnnotations: boolean;
   maxSegmentsPerPage: number;
 }
 
@@ -27,6 +29,7 @@ const DEFAULT_OPTIONS: NotionExportOptions = {
   includeTimestamps: true,
   includeMetadata: true,
   includeNotes: true,
+  includeAnnotations: true,
   maxSegmentsPerPage: 100 // Notion has a limit of 100 blocks per request
 };
 
@@ -129,11 +132,18 @@ export async function exportTranscriptToNotion(
   }
 
   // Fetch additional data
-  const [segments, category, tags] = await Promise.all([
+  const [segments, category, tags, annotations] = await Promise.all([
     segmentRepository.getByTranscriptId(transcript.transcriptId),
     transcript.categoryId ? categoryRepository.getById(transcript.categoryId) : Promise.resolve(undefined),
-    tagRepository.getTagsForTranscript(transcript.transcriptId)
+    tagRepository.getTagsForTranscript(transcript.transcriptId),
+    opts.includeAnnotations ? annotationRepository.getByTranscriptId(transcript.transcriptId) : Promise.resolve([])
   ]);
+
+  // Build annotation lookup
+  const annotationMap = new Map<string, Annotation>();
+  for (const ann of annotations) {
+    annotationMap.set(ann.segmentId, ann);
+  }
 
   // Build page properties
   const properties: Record<string, unknown> = {
@@ -251,16 +261,32 @@ export async function exportTranscriptToNotion(
     // Group segments and add with timestamps
     for (const segment of segments) {
       const timestamp = formatTimestamp(segment.startMs);
+      const annotation = annotationMap.get(segment.segmentId);
+
+      const richText: Array<{ text: { content: string }; annotations?: Record<string, unknown> }> = [
+        { text: { content: `[${timestamp}] ` }, annotations: { code: true } },
+        {
+          text: { content: segment.text },
+          ...(annotation ? { annotations: { color: annotation.color === 'pink' ? 'pink_background' : `${annotation.color}_background` } } : {})
+        }
+      ];
+
       blocks.push({
         object: 'block',
         type: 'paragraph',
-        paragraph: {
-          rich_text: [
-            { text: { content: `[${timestamp}] ` }, annotations: { code: true } },
-            { text: { content: segment.text } }
-          ]
-        }
+        paragraph: { rich_text: richText }
       });
+
+      // Add annotation note as a quote block
+      if (annotation?.note) {
+        blocks.push({
+          object: 'block',
+          type: 'quote',
+          quote: {
+            rich_text: [{ text: { content: annotation.note } }]
+          }
+        });
+      }
     }
   } else {
     // Just add as paragraphs without timestamps

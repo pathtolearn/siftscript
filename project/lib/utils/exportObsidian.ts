@@ -1,13 +1,17 @@
-import type { Video, Transcript, Segment, Category, Tag } from '../../types';
+import type { Video, Transcript, Segment, Category, Tag, Annotation } from '../../types';
 import { segmentRepository } from '../db/repositories/segmentRepository';
 import { categoryRepository } from '../db/repositories/categoryRepository';
 import { tagRepository } from '../db/repositories/tagRepository';
+import { annotationRepository } from '../db/repositories/annotationRepository';
+import { transcriptRepository } from '../db/repositories/transcriptRepository';
+import { videoRepository } from '../db/repositories/videoRepository';
 
 export interface ObsidianExportOptions {
   includeTimestamps: boolean;
   includeMetadata: boolean;
   includeNotes: boolean;
   includeTags: boolean;
+  includeAnnotations: boolean;
   timestampFormat: 'hh:mm:ss' | 'mm:ss';
 }
 
@@ -16,6 +20,7 @@ const DEFAULT_OPTIONS: ObsidianExportOptions = {
   includeMetadata: true,
   includeNotes: true,
   includeTags: true,
+  includeAnnotations: true,
   timestampFormat: 'hh:mm:ss'
 };
 
@@ -48,11 +53,18 @@ export async function exportToObsidianFormat(
   const opts = { ...DEFAULT_OPTIONS, ...options };
   
   // Fetch additional data
-  const [segments, category, tags] = await Promise.all([
+  const [segments, category, tags, annotations] = await Promise.all([
     segmentRepository.getByTranscriptId(transcript.transcriptId),
     transcript.categoryId ? categoryRepository.getById(transcript.categoryId) : Promise.resolve(undefined),
-    tagRepository.getTagsForTranscript(transcript.transcriptId)
+    tagRepository.getTagsForTranscript(transcript.transcriptId),
+    opts.includeAnnotations ? annotationRepository.getByTranscriptId(transcript.transcriptId) : Promise.resolve([])
   ]);
+
+  // Build annotation lookup
+  const annotationMap = new Map<string, Annotation>();
+  for (const ann of annotations) {
+    annotationMap.set(ann.segmentId, ann);
+  }
   
   // Generate filename
   const sanitizedTitle = sanitizeFilename(video.title);
@@ -87,14 +99,21 @@ export async function exportToObsidianFormat(
   }
   
   // Build YAML frontmatter string
+  function escapeYamlString(str: string): string {
+    // If value contains special YAML characters, wrap in double quotes and escape
+    if (/[:#\[\]{}&*!|>',@`]/.test(str) || str.startsWith('-') || str.startsWith('?') || str.includes('\n')) {
+      const escaped = str.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
+      return `"${escaped}"`;
+    }
+    return str;
+  }
+
   const yamlLines = Object.entries(frontmatter).map(([key, value]) => {
     if (Array.isArray(value)) {
-      return `${key}:\n${value.map(v => `  - ${v}`).join('\n')}`;
+      return `${key}:\n${value.map(v => `  - ${escapeYamlString(String(v))}`).join('\n')}`;
     }
     if (typeof value === 'string') {
-      // Escape special characters in strings
-      const escaped = value.replace(/"/g, '\\"').replace(/\n/g, '\\n');
-      return `${key}: "${escaped}"`;
+      return `${key}: ${escapeYamlString(value)}`;
     }
     return `${key}: ${value}`;
   });
@@ -134,10 +153,35 @@ export async function exportToObsidianFormat(
   if (opts.includeTimestamps) {
     segments.forEach(seg => {
       const timestamp = formatTimestamp(seg.startMs, opts.timestampFormat);
-      content += `[${timestamp}] ${seg.text}\n\n`;
+      const annotation = annotationMap.get(seg.segmentId);
+      if (annotation) {
+        content += `> [!${annotation.color}] [${timestamp}] ${seg.text}\n`;
+        if (annotation.note) {
+          content += `> ${annotation.note}\n`;
+        }
+        content += '\n';
+      } else {
+        content += `[${timestamp}] ${seg.text}\n\n`;
+      }
     });
   } else {
     content += segments.map(seg => seg.text).join(' ');
+  }
+
+  // Add annotations section if there are any
+  if (opts.includeAnnotations && annotations.length > 0) {
+    content += '\n## Annotations\n\n';
+    for (const ann of annotations) {
+      const segment = segments.find(s => s.segmentId === ann.segmentId);
+      if (segment) {
+        const timestamp = formatTimestamp(segment.startMs, opts.timestampFormat);
+        content += `- **[${timestamp}]** (${ann.color}) "${segment.text.substring(0, 100)}${segment.text.length > 100 ? '...' : ''}"`;
+        if (ann.note) {
+          content += `\n  - ${ann.note}`;
+        }
+        content += '\n';
+      }
+    }
   }
   
   // Combine frontmatter and content
@@ -184,8 +228,6 @@ export async function exportTranscriptToObsidian(
   transcriptId: string,
   options?: Partial<ObsidianExportOptions>
 ): Promise<void> {
-  const { transcriptRepository } = await import('../db/repositories/transcriptRepository');
-  const { videoRepository } = await import('../db/repositories/videoRepository');
   
   const transcript = await transcriptRepository.getById(transcriptId);
   if (!transcript) throw new Error('Transcript not found');

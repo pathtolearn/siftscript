@@ -40,10 +40,25 @@ export class SegmentRepository {
     return await db.segments
       .where('transcriptId')
       .equals(transcriptId)
-      .filter(segment => 
+      .filter(segment =>
         segment.text.toLowerCase().includes(lowerQuery)
       )
       .toArray();
+  }
+
+  async searchAcrossTranscripts(query: string): Promise<Map<string, Segment[]>> {
+    const lowerQuery = query.toLowerCase();
+    const matching = await db.segments
+      .filter(segment => segment.text.toLowerCase().includes(lowerQuery))
+      .toArray();
+
+    const grouped = new Map<string, Segment[]>();
+    for (const segment of matching) {
+      const existing = grouped.get(segment.transcriptId) || [];
+      existing.push(segment);
+      grouped.set(segment.transcriptId, existing);
+    }
+    return grouped;
   }
 }
 
