@@ -3,7 +3,7 @@ import { messaging } from '../../lib/messaging/messaging';
 import { transcriptRepository } from '../../lib/db/repositories/transcriptRepository';
 import { categoryRepository } from '../../lib/db/repositories/categoryRepository';
 import type { VideoContext, Category } from '../../types';
-import { Save, ExternalLink, Loader2, CheckCircle, AlertCircle, RefreshCw, FolderOpen } from 'lucide-react';
+import { Save, ExternalLink, Loader2, CheckCircle, AlertCircle, RefreshCw, FolderOpen, Copy, Check } from 'lucide-react';
 
 type SaveAction = 'save' | 'overwrite' | 'skip';
 
@@ -19,6 +19,7 @@ function App() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [transcriptInfo, setTranscriptInfo] = useState<{ languageCode: string; sourceType: string } | null>(null);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -116,10 +117,8 @@ function App() {
 
       setSaveStatus('success');
       
-      // Update existing transcript info
-      if (!saveResponse.isNew) {
-        await checkExistingTranscript(videoContext.videoId);
-      }
+      // Update existing transcript info (for both new and updated transcripts)
+      await checkExistingTranscript(videoContext.videoId);
       
       console.log('Transcript saved:', saveResponse);
     } catch (error) {
@@ -141,6 +140,25 @@ function App() {
 
   function handleOpenDashboard() {
     messaging.sendMessage('OPEN_DASHBOARD', {});
+  }
+
+  async function handleCopyTranscript() {
+    if (!videoContext) return;
+    
+    try {
+      const transcriptResponse = await messaging.sendMessage('FETCH_TRANSCRIPT', {
+        videoId: videoContext.videoId
+      });
+      
+      const fullText = transcriptResponse.segments.map((s: { text: string }) => s.text).join(' ');
+      await navigator.clipboard.writeText(fullText);
+      
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (error) {
+      console.error('Error copying transcript:', error);
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to copy transcript');
+    }
   }
 
   if (isLoading) {
@@ -300,6 +318,26 @@ function App() {
           </div>
         </div>
       )}
+
+      {/* Copy Transcript */}
+      <button
+        onClick={handleCopyTranscript}
+        disabled={!transcriptAvailable || !existingTranscript}
+        title={!existingTranscript ? "Save transcript first" : "Copy transcript to clipboard"}
+        className="w-full mb-3 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+      >
+        {copied ? (
+          <>
+            <Check className="w-4 h-4" />
+            Copied!
+          </>
+        ) : (
+          <>
+            <Copy className="w-4 h-4" />
+            Copy Transcript
+          </>
+        )}
+      </button>
 
       {/* Open Dashboard */}
       <button
