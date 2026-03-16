@@ -185,6 +185,10 @@ function formatSegmentsForPrompt(segments: Segment[]): string {
 export interface SummarizationResult {
   overallSummary: string;
   keyPoints: string[];
+  keyTakeaways: Array<{
+    takeaway: string;
+    context: string;
+  }>;
   highlights: Array<{
     startMs: number;
     text: string;
@@ -227,30 +231,35 @@ async function summarizeChunk(
   const transcriptText = formatSegmentsForPrompt(segments);
 
   const prompt = isFull
-    ? `Analyze this YouTube video transcript for "${videoTitle}". Provide:
-1. A concise overall summary (2-3 paragraphs)
-2. 5-8 key points as bullet points
-3. 3-5 notable highlights with their timestamps
+    ? `You are an expert content analyst. Analyze this YouTube video transcript titled "${videoTitle}" and provide a structured breakdown.
+
+Instructions:
+- Write a clear, well-structured summary that captures the main narrative and purpose of the video
+- Extract key points that represent the most important ideas discussed
+- Identify actionable takeaways — things the viewer can learn, apply, or remember. Each takeaway should have a short context explaining why it matters
+- Pick the most impactful or interesting moments as highlights with their timestamps (use the startMs value from the transcript timestamps)
 
 Transcript:
 ${transcriptText}
 
 Respond in this exact JSON format:
 {
-  "overallSummary": "...",
-  "keyPoints": ["...", "..."],
-  "highlights": [{"startMs": 0, "text": "quoted text", "summary": "why this is notable"}]
+  "overallSummary": "A comprehensive 2-3 paragraph summary covering the main topic, key arguments, and conclusions",
+  "keyPoints": ["Concise point 1", "Concise point 2"],
+  "keyTakeaways": [{"takeaway": "Actionable insight or lesson", "context": "Brief explanation of why this matters"}],
+  "highlights": [{"startMs": 0, "text": "quoted text from transcript", "summary": "Why this moment is notable"}]
 }`
-    : `Summarize this section of a YouTube video transcript for "${videoTitle}". Provide key points and notable moments.
+    : `Summarize this section of a YouTube video transcript titled "${videoTitle}". Extract key points, actionable takeaways, and notable moments.
 
 Transcript section:
 ${transcriptText}
 
 Respond in this exact JSON format:
 {
-  "overallSummary": "...",
-  "keyPoints": ["...", "..."],
-  "highlights": [{"startMs": 0, "text": "quoted text", "summary": "why this is notable"}]
+  "overallSummary": "Section summary",
+  "keyPoints": ["Point 1", "Point 2"],
+  "keyTakeaways": [{"takeaway": "Actionable insight", "context": "Why it matters"}],
+  "highlights": [{"startMs": 0, "text": "quoted text", "summary": "Why this is notable"}]
 }`;
 
   const response = await callAI(prompt, settings);
@@ -263,22 +272,20 @@ async function combineSummaries(
   settings: AISettings
 ): Promise<SummarizationResult> {
   const combinedText = summaries.map((s, i) =>
-    `Part ${i + 1}:\nSummary: ${s.overallSummary}\nKey Points: ${s.keyPoints.join('; ')}`
+    `Part ${i + 1}:\nSummary: ${s.overallSummary}\nKey Points: ${s.keyPoints.join('; ')}\nTakeaways: ${s.keyTakeaways.map(t => t.takeaway).join('; ')}`
   ).join('\n\n');
 
-  const prompt = `Combine these section summaries of the YouTube video "${videoTitle}" into a single coherent summary. Provide:
-1. A unified overall summary (2-3 paragraphs)
-2. 5-8 key points covering the entire video
-3. Keep the best 3-5 highlights from across all sections
+  const prompt = `Combine these section summaries of the YouTube video "${videoTitle}" into a single coherent analysis.
 
 Section summaries:
 ${combinedText}
 
 Respond in this exact JSON format:
 {
-  "overallSummary": "...",
-  "keyPoints": ["...", "..."],
-  "highlights": [{"startMs": 0, "text": "quoted text", "summary": "why this is notable"}]
+  "overallSummary": "A unified 2-3 paragraph summary covering the entire video",
+  "keyPoints": ["5-8 key points covering the whole video"],
+  "keyTakeaways": [{"takeaway": "Actionable insight or lesson", "context": "Why this matters"}],
+  "highlights": [{"startMs": 0, "text": "quoted text", "summary": "Why this is notable"}]
 }`;
 
   const response = await callAI(prompt, settings);
@@ -287,6 +294,11 @@ Respond in this exact JSON format:
   // Merge highlights from all chunks if AI didn't include timestamps
   if (result.highlights.length === 0) {
     result.highlights = summaries.flatMap(s => s.highlights).slice(0, 5);
+  }
+
+  // Merge takeaways if AI didn't include them
+  if (result.keyTakeaways.length === 0) {
+    result.keyTakeaways = summaries.flatMap(s => s.keyTakeaways).slice(0, 6);
   }
 
   return result;
@@ -447,6 +459,12 @@ function parseAIResponse(response: string): SummarizationResult {
     return {
       overallSummary: parsed.overallSummary || '',
       keyPoints: Array.isArray(parsed.keyPoints) ? parsed.keyPoints : [],
+      keyTakeaways: Array.isArray(parsed.keyTakeaways)
+        ? parsed.keyTakeaways.map((t: { takeaway?: string; context?: string }) => ({
+            takeaway: t.takeaway || '',
+            context: t.context || ''
+          }))
+        : [],
       highlights: Array.isArray(parsed.highlights)
         ? parsed.highlights.map((h: { startMs?: number; text?: string; summary?: string }) => ({
             startMs: h.startMs || 0,
@@ -460,6 +478,7 @@ function parseAIResponse(response: string): SummarizationResult {
     return {
       overallSummary: response,
       keyPoints: [],
+      keyTakeaways: [],
       highlights: []
     };
   }

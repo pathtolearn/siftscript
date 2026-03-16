@@ -61,6 +61,8 @@ export function TranscriptDetail({ transcriptId, onBack }: TranscriptDetailProps
   const [summary, setSummary] = useState<Summary | null>(null);
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [aiConfigured, setAiConfigured] = useState(false);
+  const [summaryJustGenerated, setSummaryJustGenerated] = useState(false);
+  const [summarizeError, setSummarizeError] = useState<string | null>(null);
 
   // Virtualizer ref
   const parentRef = useRef<HTMLDivElement>(null);
@@ -321,6 +323,8 @@ export function TranscriptDetail({ transcriptId, onBack }: TranscriptDetailProps
 
     try {
       setIsSummarizing(true);
+      setSummarizeError(null);
+      setSummaryJustGenerated(false);
       const result = await summarizeTranscript(segments, video.title, settings);
       const summaryId = await summaryRepository.create({
         transcriptId,
@@ -328,12 +332,17 @@ export function TranscriptDetail({ transcriptId, onBack }: TranscriptDetailProps
         model: settings.model,
         overallSummary: result.overallSummary,
         keyPoints: result.keyPoints,
+        keyTakeaways: result.keyTakeaways,
         highlights: result.highlights
       });
       const saved = await summaryRepository.getById(summaryId);
-      if (saved) setSummary(saved);
+      if (saved) {
+        setSummary(saved);
+        setSummaryJustGenerated(true);
+      }
     } catch (error) {
       console.error('Error summarizing transcript:', error);
+      setSummarizeError(error instanceof Error ? error.message : 'Failed to generate summary');
     } finally {
       setIsSummarizing(false);
     }
@@ -408,11 +417,39 @@ export function TranscriptDetail({ transcriptId, onBack }: TranscriptDetailProps
             disabled={isSummarizing}
             className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <Sparkles className="w-4 h-4" />
-            {isSummarizing ? 'Summarizing...' : 'Summarize'}
+            {isSummarizing ? (
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <Sparkles className="w-4 h-4" />
+            )}
+            {isSummarizing ? 'Generating summary...' : summary ? 'Regenerate Summary' : 'Summarize with AI'}
           </button>
         )}
+        {summarizeError && (
+          <span className="text-xs text-red-500">{summarizeError}</span>
+        )}
       </div>
+
+      {/* AI Summary - Full width */}
+      {(summary || isSummarizing) && (
+        <div className="mb-6">
+          {isSummarizing && !summary ? (
+            <div className="bg-white rounded-xl border border-gray-200 p-8">
+              <div className="flex flex-col items-center gap-3">
+                <div className="w-8 h-8 border-3 border-purple-600 border-t-transparent rounded-full animate-spin" />
+                <p className="text-sm text-gray-500">Analyzing transcript with AI...</p>
+              </div>
+            </div>
+          ) : summary ? (
+            <AISummaryPanel
+              summary={summary}
+              video={video}
+              formatTimestamp={formatTimestamp}
+              justGenerated={summaryJustGenerated}
+            />
+          ) : null}
+        </div>
+      )}
 
       {/* Content Grid */}
       <div className="grid grid-cols-3 gap-6">
@@ -611,15 +648,6 @@ export function TranscriptDetail({ transcriptId, onBack }: TranscriptDetailProps
             video={video}
             transcript={transcript}
           />
-
-          {/* AI Summary */}
-          {summary && (
-            <AISummaryPanel
-              summary={summary}
-              video={video}
-              formatTimestamp={formatTimestamp}
-            />
-          )}
 
           {/* Annotations Panel */}
           <AnnotationPanel

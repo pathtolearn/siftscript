@@ -198,6 +198,10 @@ export interface Summary {
   model: string;
   overallSummary: string;
   keyPoints: string[];
+  keyTakeaways: Array<{
+    takeaway: string;
+    context: string;
+  }>;
   highlights: Array<{
     startMs: number;
     text: string;
