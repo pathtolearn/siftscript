@@ -304,7 +304,9 @@ Respond in this exact JSON format:
   return result;
 }
 
-async function callAI(prompt: string, settings: AISettings): Promise<string> {
+type AIResponseFormat = 'json' | 'text';
+
+async function callAI(prompt: string, settings: AISettings, format: AIResponseFormat = 'json'): Promise<string> {
   const MAX_RETRIES = 3;
   const INITIAL_DELAY_MS = 1000;
 
@@ -314,13 +316,13 @@ async function callAI(prompt: string, settings: AISettings): Promise<string> {
     try {
       switch (settings.provider) {
         case 'openai':
-          return await callOpenAI(prompt, settings);
+          return await callOpenAI(prompt, settings, format);
         case 'anthropic':
-          return await callAnthropic(prompt, settings);
+          return await callAnthropic(prompt, settings, format);
         case 'google':
-          return await callGoogle(prompt, settings);
+          return await callGoogle(prompt, settings, format);
         case 'ollama':
-          return await callOllama(prompt, settings);
+          return await callOllama(prompt, settings, format);
         default:
           throw new Error(`Unsupported AI provider: ${settings.provider}`);
       }
@@ -345,22 +347,29 @@ async function callAI(prompt: string, settings: AISettings): Promise<string> {
   throw lastError!;
 }
 
-async function callOpenAI(prompt: string, settings: AISettings): Promise<string> {
+const SYSTEM_PROMPT_JSON = 'You are a helpful assistant that analyzes video transcripts. Always respond with valid JSON.';
+const SYSTEM_PROMPT_TEXT = 'You are a helpful assistant that analyzes video transcripts. Respond with well-formatted markdown content.';
+
+async function callOpenAI(prompt: string, settings: AISettings, format: AIResponseFormat): Promise<string> {
+  const body: Record<string, unknown> = {
+    model: settings.model,
+    messages: [
+      { role: 'system', content: format === 'json' ? SYSTEM_PROMPT_JSON : SYSTEM_PROMPT_TEXT },
+      { role: 'user', content: prompt }
+    ],
+    temperature: 0.3,
+  };
+  if (format === 'json') {
+    body.response_format = { type: 'json_object' };
+  }
+
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${settings.apiKey}`,
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({
-      model: settings.model,
-      messages: [
-        { role: 'system', content: 'You are a helpful assistant that analyzes video transcripts. Always respond with valid JSON.' },
-        { role: 'user', content: prompt }
-      ],
-      temperature: 0.3,
-      response_format: { type: 'json_object' }
-    })
+    body: JSON.stringify(body)
   });
 
   if (!response.ok) {
@@ -372,7 +381,7 @@ async function callOpenAI(prompt: string, settings: AISettings): Promise<string>
   return data.choices[0].message.content;
 }
 
-async function callAnthropic(prompt: string, settings: AISettings): Promise<string> {
+async function callAnthropic(prompt: string, settings: AISettings, format: AIResponseFormat): Promise<string> {
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -385,7 +394,7 @@ async function callAnthropic(prompt: string, settings: AISettings): Promise<stri
       model: settings.model,
       max_tokens: 4096,
       messages: [{ role: 'user', content: prompt }],
-      system: 'You are a helpful assistant that analyzes video transcripts. Always respond with valid JSON.'
+      system: format === 'json' ? SYSTEM_PROMPT_JSON : SYSTEM_PROMPT_TEXT
     })
   });
 
@@ -398,7 +407,12 @@ async function callAnthropic(prompt: string, settings: AISettings): Promise<stri
   return data.content[0].text;
 }
 
-async function callGoogle(prompt: string, settings: AISettings): Promise<string> {
+async function callGoogle(prompt: string, settings: AISettings, format: AIResponseFormat): Promise<string> {
+  const generationConfig: Record<string, unknown> = { temperature: 0.3 };
+  if (format === 'json') {
+    generationConfig.responseMimeType = 'application/json';
+  }
+
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${settings.model}:generateContent?key=${settings.apiKey}`,
     {
@@ -407,12 +421,9 @@ async function callGoogle(prompt: string, settings: AISettings): Promise<string>
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
         systemInstruction: {
-          parts: [{ text: 'You are a helpful assistant that analyzes video transcripts. Always respond with valid JSON.' }]
+          parts: [{ text: format === 'json' ? SYSTEM_PROMPT_JSON : SYSTEM_PROMPT_TEXT }]
         },
-        generationConfig: {
-          temperature: 0.3,
-          responseMimeType: 'application/json'
-        }
+        generationConfig
       })
     }
   );
@@ -426,17 +437,22 @@ async function callGoogle(prompt: string, settings: AISettings): Promise<string>
   return data.candidates[0].content.parts[0].text;
 }
 
-async function callOllama(prompt: string, settings: AISettings): Promise<string> {
+async function callOllama(prompt: string, settings: AISettings, format: AIResponseFormat): Promise<string> {
   const baseUrl = settings.baseUrl || 'http://localhost:11434';
+  const systemPrompt = format === 'json' ? SYSTEM_PROMPT_JSON : SYSTEM_PROMPT_TEXT;
+  const body: Record<string, unknown> = {
+    model: settings.model,
+    prompt: `${systemPrompt}\n\n${prompt}`,
+    stream: false,
+  };
+  if (format === 'json') {
+    body.format = 'json';
+  }
+
   const response = await fetch(`${baseUrl}/api/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: settings.model,
-      prompt: `You are a helpful assistant that analyzes video transcripts. Always respond with valid JSON.\n\n${prompt}`,
-      stream: false,
-      format: 'json'
-    })
+    body: JSON.stringify(body)
   });
 
   if (!response.ok) {
@@ -449,6 +465,9 @@ async function callOllama(prompt: string, settings: AISettings): Promise<string>
 
 // --- Content Repurposing ---
 
+// Which repurpose types need JSON response vs plain text/markdown
+const REPURPOSE_JSON_TYPES: Set<RepurposeType> = new Set(['twitter_thread', 'key_quotes']);
+
 const REPURPOSE_PROMPTS: Record<RepurposeType, (title: string) => string> = {
   blog_post: (title) => `Convert this YouTube video transcript titled "${title}" into a well-structured blog post.
 
@@ -460,7 +479,7 @@ Instructions:
 - Write in a professional, engaging tone
 - Aim for 800-1200 words
 
-Respond with ONLY the blog post content in markdown format. Do not wrap in JSON.`,
+Respond with ONLY the blog post content in clean markdown. No JSON wrapping. No code fences.`,
 
   twitter_thread: (title) => `Convert this YouTube video transcript titled "${title}" into a Twitter/X thread.
 
@@ -468,7 +487,6 @@ Instructions:
 - Create 10-15 tweets that cover the key ideas
 - Start with a hook tweet that grabs attention
 - Each tweet should be under 280 characters
-- Use numbering (1/, 2/, etc.)
 - End with a summary/CTA tweet
 - Include relevant emojis sparingly
 - Make each tweet standalone yet connected to the narrative
@@ -486,7 +504,7 @@ Instructions:
 - Use markdown formatting with headers, bullet points, and bold for emphasis
 - Include a brief summary at the end
 
-Respond with ONLY the study guide content in markdown format. Do not wrap in JSON.`,
+Respond with ONLY the study guide content in clean markdown. No JSON wrapping. No code fences.`,
 
   meeting_notes: (title) => `Convert this YouTube video transcript titled "${title}" into structured meeting notes.
 
@@ -497,22 +515,22 @@ Instructions:
 - Include "Action Items" with clear owners if mentioned
 - Add a "Decisions Made" section
 - Include "Key Takeaways" at the end
-- Use markdown formatting with checkboxes for action items
+- Use markdown formatting with checkboxes (- [ ]) for action items
 
-Respond with ONLY the meeting notes content in markdown format. Do not wrap in JSON.`,
+Respond with ONLY the meeting notes in clean markdown. No JSON wrapping. No code fences.`,
 
   newsletter: (title) => `Convert this YouTube video transcript titled "${title}" into an engaging newsletter edition.
 
 Instructions:
-- Write a catchy subject line / headline
+- Write a catchy subject line / headline as an H1 header
 - Start with a brief, engaging intro (2-3 sentences)
-- Break down the key insights into digestible sections
+- Break down the key insights into digestible sections with H2 headers
 - Add a "Quick Takeaways" bullet list
 - Include a "What This Means For You" section
 - End with a call to action
 - Use markdown formatting, keep it concise and scannable
 
-Respond with ONLY the newsletter content in markdown format. Do not wrap in JSON.`,
+Respond with ONLY the newsletter content in clean markdown. No JSON wrapping. No code fences.`,
 
   key_quotes: (title) => `Extract the most impactful and quotable moments from this YouTube video transcript titled "${title}".
 
@@ -541,11 +559,12 @@ export async function repurposeTranscript(
 ): Promise<RepurposeResult> {
   const chunks = chunkSegments(segments);
   const promptBuilder = REPURPOSE_PROMPTS[type];
+  const format: AIResponseFormat = REPURPOSE_JSON_TYPES.has(type) ? 'json' : 'text';
 
   if (chunks.length === 1) {
     const transcriptText = formatSegmentsForPrompt(chunks[0]);
     const prompt = `${promptBuilder(videoTitle)}\n\nTranscript:\n${transcriptText}`;
-    const response = await callAI(prompt, settings);
+    const response = await callAI(prompt, settings, format);
     onProgress?.(1, 1);
     return parseRepurposeResponse(type, response);
   }
@@ -560,27 +579,32 @@ export async function repurposeTranscript(
 
   const combinedText = chunkTexts.join('\n\n---SECTION BREAK---\n\n');
   const prompt = `${promptBuilder(videoTitle)}\n\nTranscript (multiple sections):\n${combinedText}`;
-  const response = await callAI(prompt, settings);
+  const response = await callAI(prompt, settings, format);
   onProgress?.(chunks.length + 1, chunks.length + 1);
   return parseRepurposeResponse(type, response);
 }
 
 function parseRepurposeResponse(type: RepurposeType, response: string): RepurposeResult {
+  // Twitter thread: parse JSON, format as numbered tweets in markdown
   if (type === 'twitter_thread') {
     try {
       const jsonMatch = response.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
         const tweets = Array.isArray(parsed.tweets) ? parsed.tweets : [];
+        const formatted = tweets.map((t: string, i: number) =>
+          `**${i + 1}/${tweets.length}**\n${t}`
+        ).join('\n\n---\n\n');
         return {
           type,
-          content: tweets.map((t: string, i: number) => `${i + 1}/ ${t}`).join('\n\n'),
+          content: formatted,
           metadata: { tweetCount: tweets.length, tweets },
         };
       }
     } catch { /* fall through */ }
   }
 
+  // Key quotes: parse JSON, format as a styled markdown list
   if (type === 'key_quotes') {
     try {
       const jsonMatch = response.match(/\{[\s\S]*\}/);
@@ -588,15 +612,41 @@ function parseRepurposeResponse(type: RepurposeType, response: string): Repurpos
         const parsed = JSON.parse(jsonMatch[0]);
         const quotes = Array.isArray(parsed.quotes) ? parsed.quotes : [];
         const formatted = quotes.map((q: { text: string; startMs?: number; context?: string }, i: number) => {
-          const ts = q.startMs ? `[${Math.floor((q.startMs || 0) / 60000)}:${String(Math.floor(((q.startMs || 0) % 60000) / 1000)).padStart(2, '0')}]` : '';
-          return `${i + 1}. "${q.text}" ${ts}\n   _${q.context || ''}_`;
-        }).join('\n\n');
+          const min = Math.floor((q.startMs || 0) / 60000);
+          const sec = Math.floor(((q.startMs || 0) % 60000) / 1000);
+          const ts = q.startMs ? ` \`${min}:${String(sec).padStart(2, '0')}\`` : '';
+          return `> "${q.text}"${ts}\n\n*${q.context || ''}*`;
+        }).join('\n\n---\n\n');
         return { type, content: formatted, metadata: { quoteCount: quotes.length, quotes } };
       }
     } catch { /* fall through */ }
   }
 
-  return { type, content: response, metadata: {} };
+  // For text-mode responses (blog, study guide, etc.): clean up the raw response
+  let content = response;
+
+  // Strip wrapping code fences (```markdown ... ``` or ``` ... ```)
+  content = content.replace(/^```(?:markdown|md)?\s*\n/i, '').replace(/\n```\s*$/i, '');
+
+  // If the AI still returned JSON with a "content" field, extract it
+  if (content.trimStart().startsWith('{')) {
+    try {
+      const parsed = JSON.parse(content);
+      if (typeof parsed.content === 'string') {
+        content = parsed.content;
+      } else if (typeof parsed.blog_post === 'string') {
+        content = parsed.blog_post;
+      } else if (typeof parsed.text === 'string') {
+        content = parsed.text;
+      } else if (typeof parsed.result === 'string') {
+        content = parsed.result;
+      } else if (typeof parsed.output === 'string') {
+        content = parsed.output;
+      }
+    } catch { /* not JSON, use as-is */ }
+  }
+
+  return { type, content: content.trim(), metadata: {} };
 }
 
 // --- Chapter Detection ---

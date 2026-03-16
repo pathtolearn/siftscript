@@ -11,6 +11,7 @@ import {
   Copy,
   Check,
 } from 'lucide-react';
+import { MarkdownRenderer } from '../ui/MarkdownRenderer';
 import type { Summary, Video, RepurposeType, RepurposedContent } from '../../types';
 
 type SummaryTab = 'summary' | 'takeaways' | 'highlights' | 'repurpose';
@@ -293,9 +294,7 @@ export function AISummaryPanel({
                       </button>
                     </div>
                     <div className="p-4 max-h-96 overflow-y-auto">
-                      <div className="prose prose-sm max-w-none text-gray-700 whitespace-pre-wrap text-sm leading-relaxed">
-                        {activeRepurposed.content}
-                      </div>
+                      <MarkdownRenderer content={activeRepurposed.content} />
                     </div>
                   </div>
                 )}
