@@ -3,6 +3,8 @@ import { segmentRepository } from '../db/repositories/segmentRepository';
 import { categoryRepository } from '../db/repositories/categoryRepository';
 import { tagRepository } from '../db/repositories/tagRepository';
 import { annotationRepository } from '../db/repositories/annotationRepository';
+import { chapterRepository } from '../db/repositories/chapterRepository';
+import { formatAsReadableText } from './formatTranscript';
 
 // Notion API types
 interface NotionBlock {
@@ -22,6 +24,8 @@ export interface NotionExportOptions {
   includeMetadata: boolean;
   includeNotes: boolean;
   includeAnnotations: boolean;
+  includeChapters: boolean;
+  formatted: boolean;
   maxSegmentsPerPage: number;
 }
 
@@ -30,6 +34,8 @@ const DEFAULT_OPTIONS: NotionExportOptions = {
   includeMetadata: true,
   includeNotes: true,
   includeAnnotations: true,
+  includeChapters: true,
+  formatted: false,
   maxSegmentsPerPage: 100 // Notion has a limit of 100 blocks per request
 };
 
@@ -132,11 +138,12 @@ export async function exportTranscriptToNotion(
   }
 
   // Fetch additional data
-  const [segments, category, tags, annotations] = await Promise.all([
+  const [segments, category, tags, annotations, chapters] = await Promise.all([
     segmentRepository.getByTranscriptId(transcript.transcriptId),
     transcript.categoryId ? categoryRepository.getById(transcript.categoryId) : Promise.resolve(undefined),
     tagRepository.getTagsForTranscript(transcript.transcriptId),
-    opts.includeAnnotations ? annotationRepository.getByTranscriptId(transcript.transcriptId) : Promise.resolve([])
+    opts.includeAnnotations ? annotationRepository.getByTranscriptId(transcript.transcriptId) : Promise.resolve([]),
+    opts.includeChapters ? chapterRepository.getByTranscriptId(transcript.transcriptId) : Promise.resolve([])
   ]);
 
   // Build annotation lookup
@@ -247,6 +254,32 @@ export async function exportTranscriptToNotion(
     });
   }
 
+  // Add chapters section
+  if (opts.includeChapters && chapters.length > 0) {
+    blocks.push({
+      object: 'block',
+      type: 'heading_2',
+      heading_2: {
+        rich_text: [{ text: { content: 'Chapters' } }]
+      }
+    });
+
+    for (const chapter of chapters) {
+      const timestamp = formatTimestamp(chapter.startMs);
+      blocks.push({
+        object: 'block',
+        type: 'bulleted_list_item',
+        bulleted_list_item: {
+          rich_text: [
+            { text: { content: `[${timestamp}] ` }, annotations: { code: true } },
+            { text: { content: chapter.title }, annotations: { bold: true } },
+            ...(chapter.description ? [{ text: { content: ` — ${chapter.description}` } }] : []),
+          ]
+        }
+      });
+    }
+  }
+
   // Add transcript heading
   blocks.push({
     object: 'block',
@@ -257,7 +290,22 @@ export async function exportTranscriptToNotion(
   });
 
   // Add transcript segments
-  if (opts.includeTimestamps) {
+  if (opts.formatted) {
+    // Formatted readable paragraphs
+    const paragraphs = formatAsReadableText(segments);
+    for (const para of paragraphs) {
+      const richText: Array<{ text: { content: string }; annotations?: Record<string, unknown> }> = [];
+      if (opts.includeTimestamps) {
+        richText.push({ text: { content: `[${formatTimestamp(para.startMs)}] ` }, annotations: { code: true } });
+      }
+      richText.push({ text: { content: para.text } });
+      blocks.push({
+        object: 'block',
+        type: 'paragraph',
+        paragraph: { rich_text: richText }
+      });
+    }
+  } else if (opts.includeTimestamps) {
     // Group segments and add with timestamps
     for (const segment of segments) {
       const timestamp = formatTimestamp(segment.startMs);

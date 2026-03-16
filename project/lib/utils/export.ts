@@ -1,4 +1,5 @@
 import { db } from '../db/schema';
+import { formatAsPlainText, formatAsReadableMarkdown } from './formatTranscript';
 import type { Video, Transcript, Segment, Category, Tag, TranscriptTag } from '../../types';
 
 export interface ExportData {
@@ -78,14 +79,20 @@ export function formatTranscriptAsText(
   title: string,
   channel: string,
   url: string,
-  segments: Segment[]
+  segments: Segment[],
+  formatted: boolean = false
 ): string {
   const header = `${title}\n${channel}\n${url}\n\n`;
+
+  if (formatted) {
+    return header + formatAsPlainText(segments);
+  }
+
   const body = segments.map(seg => {
     const timestamp = formatTimestamp(seg.startMs);
     return `[${timestamp}] ${seg.text}`;
   }).join('\n\n');
-  
+
   return header + body;
 }
 

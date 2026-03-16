@@ -1,4 +1,4 @@
-import type { AIProvider, AISettings, Segment } from '../../types';
+import type { AIProvider, AISettings, Segment, RepurposeType } from '../../types';
 import { getSecureKey, saveSecureKey, removeSecureKey, SECURE_KEYS } from './secureStorage';
 
 // Storage keys
@@ -445,6 +445,389 @@ async function callOllama(prompt: string, settings: AISettings): Promise<string>
 
   const data = await response.json();
   return data.response;
+}
+
+// --- Content Repurposing ---
+
+const REPURPOSE_PROMPTS: Record<RepurposeType, (title: string) => string> = {
+  blog_post: (title) => `Convert this YouTube video transcript titled "${title}" into a well-structured blog post.
+
+Instructions:
+- Write a compelling introduction that hooks the reader
+- Organize the content into logical sections with markdown headers (##)
+- Add a conclusion that summarizes the key points
+- Use markdown formatting: headers, bold, bullet points, blockquotes for key insights
+- Write in a professional, engaging tone
+- Aim for 800-1200 words
+
+Respond with ONLY the blog post content in markdown format. Do not wrap in JSON.`,
+
+  twitter_thread: (title) => `Convert this YouTube video transcript titled "${title}" into a Twitter/X thread.
+
+Instructions:
+- Create 10-15 tweets that cover the key ideas
+- Start with a hook tweet that grabs attention
+- Each tweet should be under 280 characters
+- Use numbering (1/, 2/, etc.)
+- End with a summary/CTA tweet
+- Include relevant emojis sparingly
+- Make each tweet standalone yet connected to the narrative
+
+Respond in this JSON format:
+{"tweets": ["tweet 1 text", "tweet 2 text", ...]}`,
+
+  study_guide: (title) => `Convert this YouTube video transcript titled "${title}" into a comprehensive study guide.
+
+Instructions:
+- Start with a "Learning Objectives" section
+- Organize content into clearly labeled topics/sections
+- Include "Key Terms" with definitions
+- Add "Review Questions" at the end (5-8 questions)
+- Use markdown formatting with headers, bullet points, and bold for emphasis
+- Include a brief summary at the end
+
+Respond with ONLY the study guide content in markdown format. Do not wrap in JSON.`,
+
+  meeting_notes: (title) => `Convert this YouTube video transcript titled "${title}" into structured meeting notes.
+
+Instructions:
+- Start with meeting metadata (Topic, Date reference from content if available)
+- List attendees/speakers if identifiable
+- Create an "Agenda Items" section with key discussion points
+- Include "Action Items" with clear owners if mentioned
+- Add a "Decisions Made" section
+- Include "Key Takeaways" at the end
+- Use markdown formatting with checkboxes for action items
+
+Respond with ONLY the meeting notes content in markdown format. Do not wrap in JSON.`,
+
+  newsletter: (title) => `Convert this YouTube video transcript titled "${title}" into an engaging newsletter edition.
+
+Instructions:
+- Write a catchy subject line / headline
+- Start with a brief, engaging intro (2-3 sentences)
+- Break down the key insights into digestible sections
+- Add a "Quick Takeaways" bullet list
+- Include a "What This Means For You" section
+- End with a call to action
+- Use markdown formatting, keep it concise and scannable
+
+Respond with ONLY the newsletter content in markdown format. Do not wrap in JSON.`,
+
+  key_quotes: (title) => `Extract the most impactful and quotable moments from this YouTube video transcript titled "${title}".
+
+Instructions:
+- Find 8-12 of the most insightful, quotable, or thought-provoking statements
+- For each quote, include the approximate timestamp and a brief context note
+- Organize by theme if there are clear groupings
+- Include the exact words from the transcript (minor cleanup for readability is fine)
+
+Respond in this JSON format:
+{"quotes": [{"text": "exact quote", "startMs": 0, "context": "brief context about why this quote matters"}]}`
+};
+
+export interface RepurposeResult {
+  type: RepurposeType;
+  content: string;
+  metadata: Record<string, unknown>;
+}
+
+export async function repurposeTranscript(
+  segments: Segment[],
+  videoTitle: string,
+  settings: AISettings,
+  type: RepurposeType,
+  onProgress?: (current: number, total: number) => void
+): Promise<RepurposeResult> {
+  const chunks = chunkSegments(segments);
+  const promptBuilder = REPURPOSE_PROMPTS[type];
+
+  if (chunks.length === 1) {
+    const transcriptText = formatSegmentsForPrompt(chunks[0]);
+    const prompt = `${promptBuilder(videoTitle)}\n\nTranscript:\n${transcriptText}`;
+    const response = await callAI(prompt, settings);
+    onProgress?.(1, 1);
+    return parseRepurposeResponse(type, response);
+  }
+
+  // Multi-chunk: first summarize chunks, then repurpose from combined summary
+  const chunkTexts: string[] = [];
+  for (let i = 0; i < chunks.length; i++) {
+    const text = formatSegmentsForPrompt(chunks[i]);
+    chunkTexts.push(text);
+    onProgress?.(i + 1, chunks.length + 1);
+  }
+
+  const combinedText = chunkTexts.join('\n\n---SECTION BREAK---\n\n');
+  const prompt = `${promptBuilder(videoTitle)}\n\nTranscript (multiple sections):\n${combinedText}`;
+  const response = await callAI(prompt, settings);
+  onProgress?.(chunks.length + 1, chunks.length + 1);
+  return parseRepurposeResponse(type, response);
+}
+
+function parseRepurposeResponse(type: RepurposeType, response: string): RepurposeResult {
+  if (type === 'twitter_thread') {
+    try {
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        const tweets = Array.isArray(parsed.tweets) ? parsed.tweets : [];
+        return {
+          type,
+          content: tweets.map((t: string, i: number) => `${i + 1}/ ${t}`).join('\n\n'),
+          metadata: { tweetCount: tweets.length, tweets },
+        };
+      }
+    } catch { /* fall through */ }
+  }
+
+  if (type === 'key_quotes') {
+    try {
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        const quotes = Array.isArray(parsed.quotes) ? parsed.quotes : [];
+        const formatted = quotes.map((q: { text: string; startMs?: number; context?: string }, i: number) => {
+          const ts = q.startMs ? `[${Math.floor((q.startMs || 0) / 60000)}:${String(Math.floor(((q.startMs || 0) % 60000) / 1000)).padStart(2, '0')}]` : '';
+          return `${i + 1}. "${q.text}" ${ts}\n   _${q.context || ''}_`;
+        }).join('\n\n');
+        return { type, content: formatted, metadata: { quoteCount: quotes.length, quotes } };
+      }
+    } catch { /* fall through */ }
+  }
+
+  return { type, content: response, metadata: {} };
+}
+
+// --- Chapter Detection ---
+
+export interface ChapterDetectionResult {
+  chapters: Array<{
+    title: string;
+    startMs: number;
+    endMs: number;
+    description: string;
+  }>;
+}
+
+export async function detectChapters(
+  segments: Segment[],
+  videoTitle: string,
+  settings: AISettings,
+  onProgress?: (current: number, total: number) => void
+): Promise<ChapterDetectionResult> {
+  const chunks = chunkSegments(segments);
+
+  if (chunks.length === 1) {
+    const transcriptText = formatSegmentsForPrompt(chunks[0]);
+    const prompt = buildChapterPrompt(videoTitle, transcriptText);
+    const response = await callAI(prompt, settings);
+    onProgress?.(1, 1);
+    return parseChapterResponse(response);
+  }
+
+  // For multi-chunk: process all chunks together with a combined prompt
+  const allText = chunks.map(c => formatSegmentsForPrompt(c)).join('\n');
+  const prompt = buildChapterPrompt(videoTitle, allText);
+  const response = await callAI(prompt, settings);
+  onProgress?.(1, 1);
+  return parseChapterResponse(response);
+}
+
+function buildChapterPrompt(videoTitle: string, transcriptText: string): string {
+  return `Analyze this transcript of the YouTube video "${videoTitle}" and identify 5-10 distinct topic sections/chapters.
+
+For each chapter, provide:
+- A concise, descriptive title
+- The startMs timestamp (use the timestamps from the transcript, converted to milliseconds)
+- The endMs timestamp
+- A one-line description of what's discussed
+
+Transcript:
+${transcriptText}
+
+Respond in this exact JSON format:
+{"chapters": [{"title": "Chapter Title", "startMs": 0, "endMs": 60000, "description": "Brief description of this section"}]}`;
+}
+
+function parseChapterResponse(response: string): ChapterDetectionResult {
+  try {
+    const jsonMatch = response.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      const chapters = Array.isArray(parsed.chapters) ? parsed.chapters : [];
+      return {
+        chapters: chapters.map((c: { title?: string; startMs?: number; endMs?: number; description?: string }) => ({
+          title: c.title || 'Untitled Section',
+          startMs: c.startMs || 0,
+          endMs: c.endMs || 0,
+          description: c.description || '',
+        })),
+      };
+    }
+  } catch { /* fall through */ }
+  return { chapters: [] };
+}
+
+// --- AI Transcript Cleanup ---
+
+export interface CleanupResult {
+  cleanedSegments: Array<{
+    segmentId: string;
+    cleanedText: string;
+  }>;
+}
+
+export async function cleanupTranscript(
+  segments: Segment[],
+  languageCode: string,
+  settings: AISettings,
+  onProgress?: (current: number, total: number) => void
+): Promise<CleanupResult> {
+  const chunks = chunkSegments(segments, 8000);
+  const allCleaned: CleanupResult['cleanedSegments'] = [];
+
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i];
+    const segmentTexts = chunk.map(s => ({
+      id: s.segmentId,
+      text: sanitizeTranscriptText(s.text),
+    }));
+
+    const prompt = `Fix grammar, punctuation, capitalization, and proper nouns in this auto-generated transcript. Preserve the original meaning and timing structure. Language: ${languageCode}
+
+Input segments (JSON array):
+${JSON.stringify(segmentTexts)}
+
+Respond in this exact JSON format:
+{"segments": [{"id": "segment-id", "text": "cleaned text"}]}`;
+
+    const response = await callAI(prompt, settings);
+    try {
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        if (Array.isArray(parsed.segments)) {
+          for (const s of parsed.segments) {
+            allCleaned.push({ segmentId: s.id, cleanedText: s.text });
+          }
+        }
+      }
+    } catch {
+      // If parsing fails, keep original text
+      for (const s of chunk) {
+        allCleaned.push({ segmentId: s.segmentId, cleanedText: s.text });
+      }
+    }
+    onProgress?.(i + 1, chunks.length);
+  }
+
+  return { cleanedSegments: allCleaned };
+}
+
+// --- Speaker Detection ---
+
+export interface SpeakerDetectionResult {
+  speakers: Array<{
+    id: string;
+    label: string;
+  }>;
+  assignments: Array<{
+    segmentId: string;
+    speakerId: string;
+  }>;
+}
+
+export async function detectSpeakers(
+  segments: Segment[],
+  settings: AISettings,
+  onProgress?: (current: number, total: number) => void
+): Promise<SpeakerDetectionResult> {
+  const chunks = chunkSegments(segments, 8000);
+
+  // First pass: detect speakers from initial chunk
+  const firstChunkText = formatSegmentsForPrompt(chunks[0]);
+  const detectPrompt = `Analyze this transcript and identify different speakers. Look for:
+- Topic/perspective changes suggesting different speakers
+- Question/answer patterns
+- Speech style differences
+- Explicit speaker references (interviewer mentions, introductions)
+
+Transcript:
+${firstChunkText}
+
+Respond in this exact JSON format:
+{"speakers": [{"id": "speaker_1", "label": "Speaker 1 (or their name if identifiable)"}], "assignments": [{"segmentIndex": 0, "speakerId": "speaker_1"}]}
+
+Use segmentIndex (0-based position in the transcript) for assignments.`;
+
+  const detectResponse = await callAI(detectPrompt, settings);
+  onProgress?.(1, chunks.length + 1);
+
+  let speakers: Array<{ id: string; label: string }> = [];
+  const allAssignments: Array<{ segmentId: string; speakerId: string }> = [];
+
+  try {
+    const jsonMatch = detectResponse.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      speakers = Array.isArray(parsed.speakers) ? parsed.speakers : [];
+
+      if (Array.isArray(parsed.assignments)) {
+        for (const a of parsed.assignments) {
+          const segIndex = a.segmentIndex;
+          if (segIndex >= 0 && segIndex < chunks[0].length) {
+            allAssignments.push({
+              segmentId: chunks[0][segIndex].segmentId,
+              speakerId: a.speakerId,
+            });
+          }
+        }
+      }
+    }
+  } catch { /* continue with empty results */ }
+
+  // Process remaining chunks with known speakers
+  if (speakers.length > 0 && chunks.length > 1) {
+    const speakerList = speakers.map(s => `${s.id}: ${s.label}`).join(', ');
+    let globalIndex = chunks[0].length;
+
+    for (let i = 1; i < chunks.length; i++) {
+      const chunkText = formatSegmentsForPrompt(chunks[i]);
+      const assignPrompt = `Given these known speakers: ${speakerList}
+
+Assign speakers to each segment in this transcript continuation. Use segmentIndex (0-based for THIS chunk).
+
+Transcript:
+${chunkText}
+
+Respond in JSON: {"assignments": [{"segmentIndex": 0, "speakerId": "speaker_1"}]}`;
+
+      try {
+        const response = await callAI(assignPrompt, settings);
+        const jsonMatch = response.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          if (Array.isArray(parsed.assignments)) {
+            for (const a of parsed.assignments) {
+              const segIndex = a.segmentIndex;
+              if (segIndex >= 0 && segIndex < chunks[i].length) {
+                allAssignments.push({
+                  segmentId: chunks[i][segIndex].segmentId,
+                  speakerId: a.speakerId,
+                });
+              }
+            }
+          }
+        }
+      } catch { /* skip failed chunk */ }
+
+      globalIndex += chunks[i].length;
+      onProgress?.(i + 1, chunks.length + 1);
+    }
+  }
+
+  return { speakers, assignments: allAssignments };
 }
 
 function parseAIResponse(response: string): SummarizationResult {

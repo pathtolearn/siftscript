@@ -419,6 +419,7 @@ function App() {
               stats={stats}
               categories={categories}
               onOpenDetail={handleOpenDetail}
+              onRefresh={loadDashboardData}
             />
           </ErrorBoundary>
         ) : activeTab === 'library' ? (

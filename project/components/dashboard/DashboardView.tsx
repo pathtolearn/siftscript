@@ -5,6 +5,8 @@ import {
   FolderOpen,
   Clock
 } from 'lucide-react';
+import { GlobalSearch } from './GlobalSearch';
+import { BulkExtractPanel } from './BulkExtractPanel';
 import type { Transcript, Category, Video } from '../../types';
 
 interface DashboardViewProps {
@@ -16,11 +18,20 @@ interface DashboardViewProps {
   };
   categories: (Category & { count: number })[];
   onOpenDetail: (transcriptId: string) => void;
+  onRefresh?: () => void;
 }
 
-export function DashboardView({ stats, categories, onOpenDetail }: DashboardViewProps) {
+export function DashboardView({ stats, categories, onOpenDetail, onRefresh }: DashboardViewProps) {
   return (
     <div className="space-y-6">
+      {/* Global Search */}
+      <GlobalSearch onOpenTranscript={(transcriptId) => onOpenDetail(transcriptId)} />
+
+      {/* Quick Actions */}
+      <div className="flex items-center gap-3">
+        <BulkExtractPanel onComplete={onRefresh} />
+      </div>
+
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-white p-6 rounded-xl border border-gray-200">

@@ -6,3 +6,6 @@ export { tagRepository } from './tagRepository';
 export { settingsRepository } from './settingsRepository';
 export { annotationRepository } from './annotationRepository';
 export { summaryRepository } from './summaryRepository';
+export { repurposeRepository } from './repurposeRepository';
+export { chapterRepository } from './chapterRepository';
+export { speakerRepository } from './speakerRepository';

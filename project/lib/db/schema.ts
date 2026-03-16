@@ -8,7 +8,11 @@ import type {
   TranscriptTag,
   Annotation,
   Summary,
-  AppSettings
+  AppSettings,
+  RepurposedContent,
+  Chapter,
+  Speaker,
+  SpeakerAssignment
 } from '../../types';
 import { migrateFromLocalStorage, SECURE_KEYS } from '../utils/secureStorage';
 
@@ -21,6 +25,10 @@ export class TranscriptDatabase extends Dexie {
   transcriptTags!: Table<TranscriptTag>;
   annotations!: Table<Annotation>;
   summaries!: Table<Summary>;
+  repurposedContent!: Table<RepurposedContent>;
+  chapters!: Table<Chapter>;
+  speakers!: Table<Speaker>;
+  speakerAssignments!: Table<SpeakerAssignment>;
   settings!: Table<{ key: string; value: unknown }>;
 
   constructor() {
@@ -48,6 +56,39 @@ export class TranscriptDatabase extends Dexie {
       settings: 'key'
     }).upgrade(trans => {
       console.log('Migrating from v1 to v2: adding annotations and summaries tables');
+    });
+
+    this.version(3).stores({
+      videos: 'videoId, title, channelTitle, publishedAt, lastSeenAt',
+      transcripts: 'transcriptId, videoId, languageCode, status, favorite, archived, categoryId, createdAt, updatedAt, lastOpenedAt',
+      segments: 'segmentId, transcriptId, sequence, [transcriptId+sequence]',
+      categories: 'categoryId, name',
+      tags: 'tagId, name',
+      transcriptTags: 'id, transcriptId, tagId, [transcriptId+tagId]',
+      annotations: 'annotationId, segmentId, transcriptId, [transcriptId+segmentId], color, createdAt',
+      summaries: 'summaryId, transcriptId, provider, createdAt',
+      repurposedContent: 'repurposeId, transcriptId, type, provider, createdAt',
+      settings: 'key'
+    }).upgrade(trans => {
+      console.log('Migrating from v2 to v3: adding repurposedContent table');
+    });
+
+    this.version(4).stores({
+      videos: 'videoId, title, channelTitle, publishedAt, lastSeenAt',
+      transcripts: 'transcriptId, videoId, languageCode, status, favorite, archived, categoryId, createdAt, updatedAt, lastOpenedAt',
+      segments: 'segmentId, transcriptId, sequence, [transcriptId+sequence]',
+      categories: 'categoryId, name',
+      tags: 'tagId, name',
+      transcriptTags: 'id, transcriptId, tagId, [transcriptId+tagId]',
+      annotations: 'annotationId, segmentId, transcriptId, [transcriptId+segmentId], color, createdAt',
+      summaries: 'summaryId, transcriptId, provider, createdAt',
+      repurposedContent: 'repurposeId, transcriptId, type, provider, createdAt',
+      chapters: 'chapterId, transcriptId, sequence, startMs',
+      speakers: 'speakerId, transcriptId',
+      speakerAssignments: 'assignmentId, segmentId, transcriptId, speakerId, [transcriptId+segmentId]',
+      settings: 'key'
+    }).upgrade(trans => {
+      console.log('Migrating from v3 to v4: adding chapters, speakers, speakerAssignments tables');
     });
   }
 }

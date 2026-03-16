@@ -88,7 +88,10 @@ export type MessageType =
   | 'EXPORT_DATA'
   | 'PING'
   | 'GET_SIDEBAR_DATA'
-  | 'SAVE_SIDEBAR_NOTES';
+  | 'SAVE_SIDEBAR_NOTES'
+  | 'BULK_EXTRACT_START'
+  | 'BULK_EXTRACT_STATUS'
+  | 'BULK_EXTRACT_CANCEL';
 
 export interface ExtensionMessage {
   type: MessageType;
@@ -219,4 +222,92 @@ export interface ExportOptions {
   transcriptIds?: string[];
   includeMetadata?: boolean;
   includeSegments?: boolean;
+  formatted?: boolean;
+}
+
+// Transcript view modes
+export type TranscriptViewMode = 'timestamped' | 'readable' | 'paragraph';
+
+// Formatted transcript types
+export interface FormattedParagraph {
+  startMs: number;
+  endMs: number;
+  text: string;
+  segmentIds: string[];
+}
+
+// Content repurposing types
+export type RepurposeType = 'blog_post' | 'twitter_thread' | 'study_guide' | 'meeting_notes' | 'newsletter' | 'key_quotes';
+
+export interface RepurposedContent {
+  repurposeId: string;
+  transcriptId: string;
+  type: RepurposeType;
+  content: string;
+  provider: AIProvider;
+  model: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// Chapter detection types
+export interface Chapter {
+  chapterId: string;
+  transcriptId: string;
+  title: string;
+  startMs: number;
+  endMs: number;
+  description: string;
+  sequence: number;
+  createdAt: Date;
+}
+
+// Speaker identification types
+export interface Speaker {
+  speakerId: string;
+  transcriptId: string;
+  label: string;
+  color: string;
+  createdAt: Date;
+}
+
+export interface SpeakerAssignment {
+  assignmentId: string;
+  segmentId: string;
+  transcriptId: string;
+  speakerId: string;
+}
+
+// Bulk extraction types
+export type BulkExtractStatus = 'pending' | 'fetching' | 'done' | 'error' | 'skipped';
+
+export interface BulkExtractItem {
+  videoId: string;
+  title?: string;
+  status: BulkExtractStatus;
+  error?: string;
+  transcriptId?: string;
+}
+
+export interface BulkExtractProgress {
+  total: number;
+  completed: number;
+  failed: number;
+  skipped: number;
+  items: BulkExtractItem[];
+}
+
+// Global search result types
+export interface GlobalSearchResult {
+  transcriptId: string;
+  videoId: string;
+  videoTitle: string;
+  channelTitle: string;
+  thumbnailUrl: string;
+  matches: Array<{
+    segmentId: string;
+    text: string;
+    startMs: number;
+  }>;
+  totalMatches: number;
 }

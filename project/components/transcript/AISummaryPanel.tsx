@@ -1,26 +1,60 @@
 import { useState, useEffect } from 'react';
-import { Sparkles, FileText, Lightbulb, Clock, CheckCircle2, ChevronDown, ChevronUp } from 'lucide-react';
-import type { Summary, Video } from '../../types';
+import {
+  Sparkles,
+  FileText,
+  Lightbulb,
+  Clock,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  Repeat2,
+  Copy,
+  Check,
+} from 'lucide-react';
+import type { Summary, Video, RepurposeType, RepurposedContent } from '../../types';
 
-type SummaryTab = 'summary' | 'takeaways' | 'highlights';
+type SummaryTab = 'summary' | 'takeaways' | 'highlights' | 'repurpose';
 
 interface AISummaryPanelProps {
   summary: Summary;
   video: Video;
   formatTimestamp: (ms: number) => string;
   justGenerated?: boolean;
+  repurposedContent?: RepurposedContent[];
+  onRepurpose?: (type: RepurposeType) => void;
+  isRepurposing?: boolean;
 }
 
 const TABS: { id: SummaryTab; label: string; icon: typeof FileText }[] = [
   { id: 'summary', label: 'Summary', icon: FileText },
   { id: 'takeaways', label: 'Key Takeaways', icon: Lightbulb },
   { id: 'highlights', label: 'Highlights', icon: Clock },
+  { id: 'repurpose', label: 'Repurpose', icon: Repeat2 },
 ];
 
-export function AISummaryPanel({ summary, video, formatTimestamp, justGenerated }: AISummaryPanelProps) {
+const REPURPOSE_TEMPLATES: { type: RepurposeType; label: string; description: string }[] = [
+  { type: 'blog_post', label: 'Blog Post', description: 'Well-structured article with intro, body, and conclusion' },
+  { type: 'twitter_thread', label: 'Twitter Thread', description: '10-15 tweet thread with hooks and key insights' },
+  { type: 'study_guide', label: 'Study Guide', description: 'Learning objectives, key terms, and review questions' },
+  { type: 'meeting_notes', label: 'Meeting Notes', description: 'Agenda items, action items, and decisions' },
+  { type: 'newsletter', label: 'Newsletter', description: 'Engaging newsletter edition with takeaways' },
+  { type: 'key_quotes', label: 'Key Quotes', description: 'Most impactful and quotable moments' },
+];
+
+export function AISummaryPanel({
+  summary,
+  video,
+  formatTimestamp,
+  justGenerated,
+  repurposedContent = [],
+  onRepurpose,
+  isRepurposing,
+}: AISummaryPanelProps) {
   const [activeTab, setActiveTab] = useState<SummaryTab>('summary');
   const [showSuccess, setShowSuccess] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [selectedRepurpose, setSelectedRepurpose] = useState<RepurposeType>('blog_post');
+  const [copiedRepurpose, setCopiedRepurpose] = useState(false);
 
   useEffect(() => {
     if (justGenerated) {
@@ -30,8 +64,17 @@ export function AISummaryPanel({ summary, video, formatTimestamp, justGenerated 
     }
   }, [justGenerated]);
 
-  // Fallback for summaries without keyTakeaways (backward compat)
   const takeaways = summary.keyTakeaways ?? [];
+
+  const activeRepurposed = repurposedContent.find(r => r.type === selectedRepurpose);
+
+  function handleCopyRepurposed() {
+    if (activeRepurposed) {
+      navigator.clipboard.writeText(activeRepurposed.content);
+      setCopiedRepurpose(true);
+      setTimeout(() => setCopiedRepurpose(false), 2000);
+    }
+  }
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -71,9 +114,9 @@ export function AISummaryPanel({ summary, video, formatTimestamp, justGenerated 
             {TABS.map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
-              // Show count badges
               const count = tab.id === 'takeaways' ? takeaways.length
                 : tab.id === 'highlights' ? summary.highlights.length
+                : tab.id === 'repurpose' ? repurposedContent.length
                 : summary.keyPoints.length;
 
               return (
@@ -180,6 +223,81 @@ export function AISummaryPanel({ summary, video, formatTimestamp, justGenerated 
                   <p className="text-sm text-gray-400 text-center py-4">
                     No highlights extracted. Try regenerating the summary.
                   </p>
+                )}
+              </div>
+            )}
+
+            {activeTab === 'repurpose' && (
+              <div className="space-y-4">
+                {/* Template selector */}
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 block">
+                    Template
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {REPURPOSE_TEMPLATES.map((template) => {
+                      const isSelected = selectedRepurpose === template.type;
+                      const hasContent = repurposedContent.some(r => r.type === template.type);
+                      return (
+                        <button
+                          key={template.type}
+                          onClick={() => setSelectedRepurpose(template.type)}
+                          className={`text-left p-2.5 rounded-lg border transition-colors ${
+                            isSelected
+                              ? 'border-purple-300 bg-purple-50'
+                              : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <p className={`text-xs font-medium ${isSelected ? 'text-purple-700' : 'text-gray-900'}`}>
+                              {template.label}
+                            </p>
+                            {hasContent && (
+                              <CheckCircle2 className="w-3 h-3 text-green-500" />
+                            )}
+                          </div>
+                          <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{template.description}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Generate button */}
+                <button
+                  onClick={() => onRepurpose?.(selectedRepurpose)}
+                  disabled={isRepurposing}
+                  className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                >
+                  {isRepurposing ? (
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <Repeat2 className="w-4 h-4" />
+                  )}
+                  {isRepurposing ? 'Generating...' : activeRepurposed ? 'Regenerate' : 'Generate'}
+                </button>
+
+                {/* Generated content */}
+                {activeRepurposed && (
+                  <div className="border border-gray-200 rounded-lg overflow-hidden">
+                    <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-200">
+                      <span className="text-xs text-gray-500">
+                        Generated with {activeRepurposed.provider}/{activeRepurposed.model}
+                      </span>
+                      <button
+                        onClick={handleCopyRepurposed}
+                        className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700"
+                      >
+                        {copiedRepurpose ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                        {copiedRepurpose ? 'Copied!' : 'Copy'}
+                      </button>
+                    </div>
+                    <div className="p-4 max-h-96 overflow-y-auto">
+                      <div className="prose prose-sm max-w-none text-gray-700 whitespace-pre-wrap text-sm leading-relaxed">
+                        {activeRepurposed.content}
+                      </div>
+                    </div>
+                  </div>
                 )}
               </div>
             )}

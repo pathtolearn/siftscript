@@ -1,10 +1,11 @@
-import type { 
-  MessageType, 
-  VideoContext, 
+import type {
+  MessageType,
+  VideoContext,
   TranscriptInfo,
   TranscriptSegment,
   ExtensionMessage,
-  ExtensionResponse 
+  ExtensionResponse,
+  BulkExtractProgress
 } from '../../types';
 
 // Message payloads
@@ -97,6 +98,32 @@ export interface MessageDefinitions {
     payload: { transcriptId: string; notes: string };
     response: null;
   };
+  BULK_EXTRACT_START: {
+    payload: BulkExtractStartPayload;
+    response: { requestId: string };
+  };
+  BULK_EXTRACT_STATUS: {
+    payload: BulkExtractStatusPayload;
+    response: { progress: BulkExtractProgress | null };
+  };
+  BULK_EXTRACT_CANCEL: {
+    payload: BulkExtractCancelPayload;
+    response: { cancelled: boolean };
+  };
+}
+
+// Bulk extract types
+export interface BulkExtractStartPayload {
+  url: string;
+  videoIds?: string[];
+}
+
+export interface BulkExtractStatusPayload {
+  requestId: string;
+}
+
+export interface BulkExtractCancelPayload {
+  requestId: string;
 }
 
 // Helper type to extract payload/response for a specific message type

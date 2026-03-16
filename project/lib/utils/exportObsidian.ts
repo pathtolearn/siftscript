@@ -5,6 +5,8 @@ import { tagRepository } from '../db/repositories/tagRepository';
 import { annotationRepository } from '../db/repositories/annotationRepository';
 import { transcriptRepository } from '../db/repositories/transcriptRepository';
 import { videoRepository } from '../db/repositories/videoRepository';
+import { chapterRepository } from '../db/repositories/chapterRepository';
+import { formatAsReadableText } from './formatTranscript';
 
 export interface ObsidianExportOptions {
   includeTimestamps: boolean;
@@ -12,6 +14,8 @@ export interface ObsidianExportOptions {
   includeNotes: boolean;
   includeTags: boolean;
   includeAnnotations: boolean;
+  includeChapters: boolean;
+  formatted: boolean;
   timestampFormat: 'hh:mm:ss' | 'mm:ss';
 }
 
@@ -21,6 +25,8 @@ const DEFAULT_OPTIONS: ObsidianExportOptions = {
   includeNotes: true,
   includeTags: true,
   includeAnnotations: true,
+  includeChapters: true,
+  formatted: false,
   timestampFormat: 'hh:mm:ss'
 };
 
@@ -53,11 +59,12 @@ export async function exportToObsidianFormat(
   const opts = { ...DEFAULT_OPTIONS, ...options };
   
   // Fetch additional data
-  const [segments, category, tags, annotations] = await Promise.all([
+  const [segments, category, tags, annotations, chapters] = await Promise.all([
     segmentRepository.getByTranscriptId(transcript.transcriptId),
     transcript.categoryId ? categoryRepository.getById(transcript.categoryId) : Promise.resolve(undefined),
     tagRepository.getTagsForTranscript(transcript.transcriptId),
-    opts.includeAnnotations ? annotationRepository.getByTranscriptId(transcript.transcriptId) : Promise.resolve([])
+    opts.includeAnnotations ? annotationRepository.getByTranscriptId(transcript.transcriptId) : Promise.resolve([]),
+    opts.includeChapters ? chapterRepository.getByTranscriptId(transcript.transcriptId) : Promise.resolve([])
   ]);
 
   // Build annotation lookup
@@ -147,10 +154,35 @@ export async function exportToObsidianFormat(
     content += `## Notes\n\n${transcript.notes}\n\n`;
   }
   
+  // Add chapters as table of contents
+  if (opts.includeChapters && chapters.length > 0) {
+    content += '## Chapters\n\n';
+    for (const chapter of chapters) {
+      const timestamp = formatTimestamp(chapter.startMs, opts.timestampFormat);
+      content += `- **[${timestamp}]** ${chapter.title}`;
+      if (chapter.description) {
+        content += ` — ${chapter.description}`;
+      }
+      content += '\n';
+    }
+    content += '\n';
+  }
+
   // Add transcript
   content += '## Transcript\n\n';
-  
-  if (opts.includeTimestamps) {
+
+  if (opts.formatted) {
+    // Formatted readable text
+    const paragraphs = formatAsReadableText(segments);
+    for (const para of paragraphs) {
+      if (opts.includeTimestamps) {
+        const timestamp = formatTimestamp(para.startMs, opts.timestampFormat);
+        content += `**[${timestamp}]** ${para.text}\n\n`;
+      } else {
+        content += `${para.text}\n\n`;
+      }
+    }
+  } else if (opts.includeTimestamps) {
     segments.forEach(seg => {
       const timestamp = formatTimestamp(seg.startMs, opts.timestampFormat);
       const annotation = annotationMap.get(seg.segmentId);
