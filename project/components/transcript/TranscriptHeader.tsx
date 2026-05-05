@@ -2,6 +2,9 @@ import {
   ArrowLeft,
   Heart,
   Archive,
+  ArchiveRestore,
+  BookOpen,
+  BookCheck,
   ExternalLink,
   Globe,
   Calendar,
@@ -16,6 +19,7 @@ interface TranscriptHeaderProps {
   onBack: () => void;
   onToggleFavorite: () => void;
   onToggleArchive: () => void;
+  onToggleRead: () => void;
   formatDate: (date: Date) => string;
 }
 
@@ -27,8 +31,10 @@ export function TranscriptHeader({
   onBack,
   onToggleFavorite,
   onToggleArchive,
+  onToggleRead,
   formatDate,
 }: TranscriptHeaderProps) {
+  const isRead = transcript.status === 'reviewed' || transcript.status === 'in-review';
   return (
     <div className="mb-6">
       <button
@@ -77,6 +83,7 @@ export function TranscriptHeader({
         <div className="flex items-center gap-2">
           <button
             onClick={onToggleFavorite}
+            title={transcript.favorite ? 'Remove from favorites' : 'Add to favorites'}
             className={`p-2 rounded-lg transition-colors ${
               transcript.favorite ? 'text-red-500 bg-red-50' : 'text-gray-400 hover:bg-gray-100'
             }`}
@@ -84,17 +91,28 @@ export function TranscriptHeader({
             <Heart className={`w-5 h-5 ${transcript.favorite ? 'fill-current' : ''}`} />
           </button>
           <button
-            onClick={onToggleArchive}
+            onClick={onToggleRead}
+            title={isRead ? 'Mark as unread' : 'Mark as read'}
             className={`p-2 rounded-lg transition-colors ${
-              transcript.archived ? 'text-gray-600 bg-gray-100' : 'text-gray-400 hover:bg-gray-100'
+              isRead ? 'text-indigo-600 bg-indigo-50' : 'text-gray-400 hover:bg-gray-100'
             }`}
           >
-            <Archive className="w-5 h-5" />
+            {isRead ? <BookCheck className="w-5 h-5" /> : <BookOpen className="w-5 h-5" />}
+          </button>
+          <button
+            onClick={onToggleArchive}
+            title={transcript.archived ? 'Unarchive' : 'Archive'}
+            className={`p-2 rounded-lg transition-colors ${
+              transcript.archived ? 'text-amber-600 bg-amber-50' : 'text-gray-400 hover:bg-gray-100'
+            }`}
+          >
+            {transcript.archived ? <ArchiveRestore className="w-5 h-5" /> : <Archive className="w-5 h-5" />}
           </button>
           <a
             href={video.url}
             target="_blank"
             rel="noopener noreferrer"
+            title="Open on YouTube"
             className="p-2 text-gray-400 hover:bg-gray-100 rounded-lg transition-colors"
           >
             <ExternalLink className="w-5 h-5" />

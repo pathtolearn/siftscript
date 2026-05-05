@@ -12,7 +12,10 @@ import type {
   RepurposedContent,
   Chapter,
   Speaker,
-  SpeakerAssignment
+  SpeakerAssignment,
+  CrossAnalysis,
+  Concept,
+  ConceptCluster,
 } from '../../types';
 import { migrateFromLocalStorage, SECURE_KEYS } from '../utils/secureStorage';
 
@@ -29,6 +32,9 @@ export class TranscriptDatabase extends Dexie {
   chapters!: Table<Chapter>;
   speakers!: Table<Speaker>;
   speakerAssignments!: Table<SpeakerAssignment>;
+  crossAnalyses!: Table<CrossAnalysis>;
+  concepts!: Table<Concept>;
+  conceptClusters!: Table<ConceptCluster>;
   settings!: Table<{ key: string; value: unknown }>;
 
   constructor() {
@@ -89,6 +95,46 @@ export class TranscriptDatabase extends Dexie {
       settings: 'key'
     }).upgrade(trans => {
       console.log('Migrating from v3 to v4: adding chapters, speakers, speakerAssignments tables');
+    });
+
+    this.version(5).stores({
+      videos: 'videoId, title, channelTitle, publishedAt, lastSeenAt',
+      transcripts: 'transcriptId, videoId, languageCode, status, favorite, archived, categoryId, createdAt, updatedAt, lastOpenedAt',
+      segments: 'segmentId, transcriptId, sequence, [transcriptId+sequence]',
+      categories: 'categoryId, name',
+      tags: 'tagId, name',
+      transcriptTags: 'id, transcriptId, tagId, [transcriptId+tagId]',
+      annotations: 'annotationId, segmentId, transcriptId, [transcriptId+segmentId], color, createdAt',
+      summaries: 'summaryId, transcriptId, provider, createdAt',
+      repurposedContent: 'repurposeId, transcriptId, type, provider, createdAt',
+      chapters: 'chapterId, transcriptId, sequence, startMs',
+      speakers: 'speakerId, transcriptId',
+      speakerAssignments: 'assignmentId, segmentId, transcriptId, speakerId, [transcriptId+segmentId]',
+      crossAnalyses: 'crossAnalysisId, provider, createdAt',
+      settings: 'key'
+    }).upgrade(() => {
+      console.log('Migrating from v4 to v5: adding crossAnalyses table');
+    });
+
+    this.version(6).stores({
+      videos: 'videoId, title, channelTitle, publishedAt, lastSeenAt',
+      transcripts: 'transcriptId, videoId, languageCode, status, favorite, archived, categoryId, createdAt, updatedAt, lastOpenedAt',
+      segments: 'segmentId, transcriptId, sequence, [transcriptId+sequence]',
+      categories: 'categoryId, name',
+      tags: 'tagId, name',
+      transcriptTags: 'id, transcriptId, tagId, [transcriptId+tagId]',
+      annotations: 'annotationId, segmentId, transcriptId, [transcriptId+segmentId], color, createdAt',
+      summaries: 'summaryId, transcriptId, provider, createdAt',
+      repurposedContent: 'repurposeId, transcriptId, type, provider, createdAt',
+      chapters: 'chapterId, transcriptId, sequence, startMs',
+      speakers: 'speakerId, transcriptId',
+      speakerAssignments: 'assignmentId, segmentId, transcriptId, speakerId, [transcriptId+segmentId]',
+      crossAnalyses: 'crossAnalysisId, provider, createdAt',
+      concepts: 'conceptId, transcriptId, videoId, channelId, normalizedLabel, category, publishedAt, extractedAt',
+      conceptClusters: 'clusterId, normalizedLabel, category, updatedAt',
+      settings: 'key'
+    }).upgrade(() => {
+      console.log('Migrating to v6: adding concepts and conceptClusters tables');
     });
   }
 }

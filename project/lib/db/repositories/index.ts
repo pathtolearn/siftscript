@@ -9,3 +9,5 @@ export { summaryRepository } from './summaryRepository';
 export { repurposeRepository } from './repurposeRepository';
 export { chapterRepository } from './chapterRepository';
 export { speakerRepository } from './speakerRepository';
+export { conceptRepository } from './conceptRepository';
+export { conceptClusterRepository } from './conceptClusterRepository';

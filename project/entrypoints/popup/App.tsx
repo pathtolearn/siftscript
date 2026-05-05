@@ -172,6 +172,10 @@ function App() {
   if (!videoContext) {
     return (
       <div className="w-80 p-4">
+        <div className="flex items-center gap-2 mb-4 pb-3 border-b border-gray-100">
+          <img src="/vidsage_logo.png" alt="VidSage" className="w-7 h-7 object-contain" />
+          <span className="text-sm font-semibold text-gray-900">VidSage</span>
+        </div>
         <div className="text-center py-6">
           <AlertCircle className="w-10 h-10 text-gray-400 mx-auto mb-3" />
           <h2 className="text-sm font-medium text-gray-900 mb-1">No YouTube Video Detected</h2>
@@ -192,6 +196,12 @@ function App() {
 
   return (
     <div className="w-80 p-4">
+      {/* Header */}
+      <div className="flex items-center gap-2 mb-4 pb-3 border-b border-gray-100">
+        <img src="/vidsage_logo.png" alt="VidSage" className="w-7 h-7 object-contain" />
+        <span className="text-sm font-semibold text-gray-900">VidSage</span>
+      </div>
+
       {/* Video Info */}
       <div className="mb-4">
         <div className="flex gap-3">

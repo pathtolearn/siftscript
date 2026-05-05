@@ -381,10 +381,41 @@ async function findTranscriptButton(): Promise<HTMLElement | null> {
   return null;
 }
 
+/**
+ * Pick the best caption track using this priority order:
+ * 1. Exact match on preferredLanguage (manual track)
+ * 2. Exact match on preferredLanguage (any kind, incl. auto-generated)
+ * 3. English manual track  (`en`, no `kind`)
+ * 4. English auto-generated (`en`, kind === 'asr')
+ * 5. Any manual track      (no `kind`)
+ * 6. First track in list   (last resort)
+ */
+function selectBestTrack(
+  tracks: YouTubeCaptionTrack[],
+  preferredLanguage?: string
+): YouTubeCaptionTrack {
+  if (preferredLanguage) {
+    const manualMatch = tracks.find(t => t.languageCode === preferredLanguage && !t.kind);
+    if (manualMatch) return manualMatch;
+    const anyMatch = tracks.find(t => t.languageCode === preferredLanguage);
+    if (anyMatch) return anyMatch;
+  }
+
+  // Default to English — manual first, then auto-generated
+  const enManual = tracks.find(t => t.languageCode === 'en' && !t.kind);
+  if (enManual) return enManual;
+
+  const enAuto = tracks.find(t => t.languageCode === 'en');
+  if (enAuto) return enAuto;
+
+  // Fall back to any manual track, then whatever comes first
+  return tracks.find(t => !t.kind) ?? tracks[0];
+}
+
 async function fetchFromPageHtml(videoId: string, preferredLanguage?: string): Promise<FetchTranscriptResult> {
   try {
     console.log('fetchFromPageHtml: Starting for videoId:', videoId);
-    
+
     const html = await getWatchPageHtml(videoId);
     const tracks = extractCaptionTracksFromHtml(html);
 
@@ -392,14 +423,7 @@ async function fetchFromPageHtml(videoId: string, preferredLanguage?: string): P
       return { state: 'unavailable', error: 'No caption tracks found in page HTML' };
     }
 
-    // Select best track
-    let selectedTrack: YouTubeCaptionTrack | undefined;
-    if (preferredLanguage) {
-      selectedTrack = tracks.find(t => t.languageCode === preferredLanguage);
-    }
-    if (!selectedTrack) {
-      selectedTrack = tracks.find(t => !t.kind) || tracks[0];
-    }
+    const selectedTrack = selectBestTrack(tracks, preferredLanguage);
 
     if (!selectedTrack?.baseUrl) {
       return { state: 'error', error: 'Selected track has no baseUrl' };
@@ -488,14 +512,7 @@ async function fetchFromInnerTube(videoId: string, preferredLanguage?: string): 
     }
 
     const tracks: YouTubeCaptionTrack[] = captions.captionTracks;
-    let selectedTrack: YouTubeCaptionTrack | undefined;
-
-    if (preferredLanguage) {
-      selectedTrack = tracks.find(t => t.languageCode === preferredLanguage);
-    }
-    if (!selectedTrack) {
-      selectedTrack = tracks.find(t => !t.kind) || tracks[0];
-    }
+    const selectedTrack = selectBestTrack(tracks, preferredLanguage);
     
     if (!selectedTrack?.baseUrl) {
       return { state: 'error', error: 'Selected track has no baseUrl' };

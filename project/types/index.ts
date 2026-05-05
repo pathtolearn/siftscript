@@ -297,6 +297,109 @@ export interface BulkExtractProgress {
   items: BulkExtractItem[];
 }
 
+// Cross-video analysis types
+export interface CrossAnalysis {
+  crossAnalysisId: string;
+  transcriptIds: string[];
+  themes: Array<{
+    theme: string;
+    description: string;
+    videoEvidence: Array<{
+      videoTitle: string;
+      evidence: string;
+    }>;
+  }>;
+  contradictions: Array<{
+    topic: string;
+    positions: Array<{
+      videoTitle: string;
+      position: string;
+    }>;
+  }>;
+  progression: Array<{
+    concept: string;
+    timeline: Array<{
+      videoTitle: string;
+      development: string;
+    }>;
+  }>;
+  synthesis: string;
+  provider: AIProvider;
+  model: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// ─── Knowledge Graph types ────────────────────────────────────────────────────
+
+export type ConceptCategory =
+  | 'idea'
+  | 'framework'
+  | 'person'
+  | 'book'
+  | 'topic'
+  | 'organization';
+
+/** A single concept extracted from one transcript */
+export interface Concept {
+  conceptId: string;
+  transcriptId: string;
+  videoId: string;
+  channelId: string;
+  channelTitle: string;
+  label: string;              // original extracted label
+  normalizedLabel: string;    // lowercased + trimmed — dedup key
+  category: ConceptCategory;
+  mentions: number;
+  context: string;            // short excerpt showing concept in use
+  publishedAt: Date;          // video publish date — used for timeline
+  extractedAt: Date;
+  extractionMethod: 'ai' | 'keyword';
+}
+
+/** One concept that appears across multiple transcripts */
+export interface ConceptCluster {
+  clusterId: string;
+  label: string;              // display label (most common form)
+  normalizedLabel: string;
+  category: ConceptCategory;
+  transcriptIds: string[];
+  videoIds: string[];
+  channelIds: string[];
+  totalMentions: number;
+  firstSeenAt: Date;
+  lastSeenAt: Date;
+  updatedAt: Date;
+}
+
+/** Node in the visual graph */
+export interface GraphNode {
+  id: string;
+  type: 'concept' | 'creator';
+  label: string;
+  category?: ConceptCategory;
+  transcriptCount: number;
+  totalMentions: number;
+  channelId?: string;
+}
+
+/** Edge in the visual graph */
+export interface GraphEdge {
+  source: string;
+  target: string;
+  weight: number;
+  sharedTranscriptIds: string[];
+}
+
+/** Full graph payload consumed by the visualisation */
+export interface GraphData {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  lastBuiltAt: Date;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 // Global search result types
 export interface GlobalSearchResult {
   transcriptId: string;

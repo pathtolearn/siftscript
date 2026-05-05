@@ -4,26 +4,29 @@ import { NotionSettings } from './NotionSettings';
 import { AISettings } from './AISettings';
 import { ImportExport } from './ImportExport';
 import { DataManagement } from './DataManagement';
+import { AccountSettings } from './AccountSettings';
 import {
   Settings,
   Link,
   Brain,
   ArrowLeftRight,
   Database,
+  UserCircle,
 } from 'lucide-react';
 
-type SettingsTab = 'general' | 'notion' | 'ai' | 'import-export' | 'data';
+type SettingsTab = 'account' | 'general' | 'notion' | 'ai' | 'import-export' | 'data';
 
 const tabs: { id: SettingsTab; label: string; icon: typeof Settings }[] = [
+  { id: 'account', label: 'Account', icon: UserCircle },
   { id: 'general', label: 'General', icon: Settings },
   { id: 'notion', label: 'Notion', icon: Link },
-  { id: 'ai', label: 'AI', icon: Brain },
+  { id: 'ai', label: 'AI (BYOK)', icon: Brain },
   { id: 'import-export', label: 'Import / Export', icon: ArrowLeftRight },
   { id: 'data', label: 'Data', icon: Database },
 ];
 
 export function SettingsView() {
-  const [activeTab, setActiveTab] = useState<SettingsTab>('general');
+  const [activeTab, setActiveTab] = useState<SettingsTab>('account');
 
   return (
     <div className="max-w-4xl">
@@ -39,7 +42,7 @@ export function SettingsView() {
                   onClick={() => setActiveTab(id)}
                   className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                     activeTab === id
-                      ? 'bg-blue-50 text-blue-700'
+                      ? 'bg-indigo-50 text-indigo-700'
                       : 'text-gray-600 hover:bg-gray-100'
                   }`}
                 >
@@ -53,6 +56,13 @@ export function SettingsView() {
 
         {/* Tab content */}
         <div className="flex-1 bg-white rounded-xl border border-gray-200 p-6">
+          {activeTab === 'account' && (
+            <>
+              <h3 className="text-lg font-medium text-gray-900 mb-4">Account</h3>
+              <AccountSettings />
+            </>
+          )}
+
           {activeTab === 'general' && (
             <>
               <h3 className="text-lg font-medium text-gray-900 mb-4">General</h3>
@@ -69,7 +79,10 @@ export function SettingsView() {
 
           {activeTab === 'ai' && (
             <>
-              <h3 className="text-lg font-medium text-gray-900 mb-4">AI Summarization</h3>
+              <h3 className="text-lg font-medium text-gray-900 mb-4">AI — Bring Your Own Key</h3>
+              <p className="text-sm text-gray-500 mb-4">
+                Configure your own API key to bypass monthly limits. When set, calls go directly to the provider — no VidSage servers involved.
+              </p>
               <AISettings />
             </>
           )}

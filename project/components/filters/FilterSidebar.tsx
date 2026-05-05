@@ -48,8 +48,18 @@ export function FilterSidebar({
   const [languages, setLanguages] = useState<string[]>([]);
   const [expandedSections, setExpandedSections] = useState<string[]>(['category', 'status', 'sort']);
 
+  // Pending (staged) state — only applied when user clicks Apply
+  const [pendingFilters, setPendingFilters] = useState<SearchFilters>(filters);
+  const [pendingSort, setPendingSort] = useState<SortOption>(sort);
+
+  // Sync pending state when applied filters change externally (e.g. clear all)
   useEffect(() => {
-    loadFilterOptions();
+    setPendingFilters(filters);
+    setPendingSort(sort);
+  }, [filters, sort]);
+
+  useEffect(() => {
+    loadFilterOptions().catch(err => console.error('loadFilterOptions:', err));
   }, []);
 
   async function loadFilterOptions() {
@@ -62,29 +72,41 @@ export function FilterSidebar({
     setCategories(cats);
     setTags(tagsWithCounts.filter(t => t.count > 0));
 
-    // Extract unique channels and languages
     const videoIds = allTranscripts.map(t => t.videoId);
     const videos = await Promise.all(videoIds.map(id => videoRepository.getById(id)));
     const uniqueChannels = [...new Set(videos.filter(v => v).map(v => v!.channelTitle))];
     const uniqueLanguages = [...new Set(allTranscripts.map(t => t.languageLabel).filter(Boolean))];
-    
+
     setChannels(uniqueChannels.sort());
     setLanguages(uniqueLanguages.sort());
   }
 
   function toggleSection(section: string) {
-    setExpandedSections(prev => 
-      prev.includes(section) 
+    setExpandedSections(prev =>
+      prev.includes(section)
         ? prev.filter(s => s !== section)
         : [...prev, section]
     );
   }
 
   function updateFilter<K extends keyof SearchFilters>(key: K, value: SearchFilters[K]) {
-    onFilterChange({ ...filters, [key]: value });
+    setPendingFilters(prev => ({ ...prev, [key]: value }));
+  }
+
+  function handleApply() {
+    onFilterChange(pendingFilters);
+    onSortChange(pendingSort);
+  }
+
+  function handleClearAll() {
+    setPendingFilters({});
+    setPendingSort('newest');
+    onClearFilters();
   }
 
   const hasActiveFilters = Object.values(filters).some(v => v !== undefined);
+  const hasPendingChanges =
+    JSON.stringify(pendingFilters) !== JSON.stringify(filters) || pendingSort !== sort;
 
   return (
     <>
@@ -98,7 +120,7 @@ export function FilterSidebar({
 
       {/* Sidebar */}
       <aside className={`
-        fixed lg:static inset-y-0 left-0 z-50
+        fixed lg:static top-16 lg:top-auto bottom-0 left-0 z-50
         w-72 bg-card border-r border-border overflow-y-auto
         transform transition-transform duration-300 ease-in-out
         ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
@@ -125,8 +147,8 @@ export function FilterSidebar({
             </button>
             {expandedSections.includes('sort') && (
               <select
-                value={sort}
-                onChange={(e) => onSortChange(e.target.value as SortOption)}
+                value={pendingSort}
+                onChange={(e) => setPendingSort(e.target.value as SortOption)}
                 className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 {SORT_OPTIONS.map(option => (
@@ -154,7 +176,7 @@ export function FilterSidebar({
                     <input
                       type="radio"
                       name="category"
-                      checked={filters.category === category.categoryId}
+                      checked={pendingFilters.category === category.categoryId}
                       onChange={() => updateFilter('category', category.categoryId)}
                       className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
                     />
@@ -167,12 +189,12 @@ export function FilterSidebar({
                     </div>
                   </label>
                 ))}
-                {filters.category && (
+                {pendingFilters.category && (
                   <button
                     onClick={() => updateFilter('category', undefined)}
                     className="text-xs text-blue-600 hover:text-blue-700"
                   >
-                    Clear category filter
+                    Clear
                   </button>
                 )}
               </div>
@@ -199,7 +221,7 @@ export function FilterSidebar({
                       <input
                         type="radio"
                         name="tag"
-                        checked={filters.tag === tag.tagId}
+                        checked={pendingFilters.tag === tag.tagId}
                         onChange={() => updateFilter('tag', tag.tagId)}
                         className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
                       />
@@ -207,12 +229,12 @@ export function FilterSidebar({
                       <span className="text-xs text-gray-400">({tag.count})</span>
                     </label>
                   ))}
-                  {filters.tag && (
+                  {pendingFilters.tag && (
                     <button
                       onClick={() => updateFilter('tag', undefined)}
                       className="text-xs text-blue-600 hover:text-blue-700"
                     >
-                      Clear tag filter
+                      Clear
                     </button>
                   )}
                 </div>
@@ -236,19 +258,19 @@ export function FilterSidebar({
                     <input
                       type="radio"
                       name="status"
-                      checked={filters.status === status.value}
+                      checked={pendingFilters.status === status.value}
                       onChange={() => updateFilter('status', status.value)}
                       className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
                     />
                     <span className="text-sm text-gray-700 capitalize">{status.label}</span>
                   </label>
                 ))}
-                {filters.status && (
+                {pendingFilters.status && (
                   <button
                     onClick={() => updateFilter('status', undefined)}
                     className="text-xs text-blue-600 hover:text-blue-700"
                   >
-                    Clear status filter
+                    Clear
                   </button>
                 )}
               </div>
@@ -260,7 +282,7 @@ export function FilterSidebar({
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
-                checked={filters.favorite === true}
+                checked={pendingFilters.favorite === true}
                 onChange={(e) => updateFilter('favorite', e.target.checked ? true : undefined)}
                 className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
               />
@@ -273,7 +295,7 @@ export function FilterSidebar({
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
-                checked={filters.archived === true}
+                checked={pendingFilters.archived === true}
                 onChange={(e) => updateFilter('archived', e.target.checked ? true : undefined)}
                 className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
               />
@@ -298,19 +320,19 @@ export function FilterSidebar({
                       <input
                         type="radio"
                         name="channel"
-                        checked={filters.channel === channel}
+                        checked={pendingFilters.channel === channel}
                         onChange={() => updateFilter('channel', channel)}
                         className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
                       />
                       <span className="text-sm text-gray-700 truncate">{channel}</span>
                     </label>
                   ))}
-                  {filters.channel && (
+                  {pendingFilters.channel && (
                     <button
                       onClick={() => updateFilter('channel', undefined)}
                       className="text-xs text-blue-600 hover:text-blue-700"
                     >
-                      Clear channel filter
+                      Clear
                     </button>
                   )}
                 </div>
@@ -335,19 +357,19 @@ export function FilterSidebar({
                       <input
                         type="radio"
                         name="language"
-                        checked={filters.language === lang}
+                        checked={pendingFilters.language === lang}
                         onChange={() => updateFilter('language', lang)}
                         className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
                       />
                       <span className="text-sm text-gray-700">{lang}</span>
                     </label>
                   ))}
-                  {filters.language && (
+                  {pendingFilters.language && (
                     <button
                       onClick={() => updateFilter('language', undefined)}
                       className="text-xs text-blue-600 hover:text-blue-700"
                     >
-                      Clear language filter
+                      Clear
                     </button>
                   )}
                 </div>
@@ -370,7 +392,7 @@ export function FilterSidebar({
                   <label className="block text-xs text-gray-500 mb-1">From</label>
                   <input
                     type="date"
-                    value={filters.dateFrom ? filters.dateFrom.toISOString().split('T')[0] : ''}
+                    value={pendingFilters.dateFrom ? pendingFilters.dateFrom.toISOString().split('T')[0] : ''}
                     onChange={(e) => updateFilter('dateFrom', e.target.value ? new Date(e.target.value) : undefined)}
                     className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
@@ -379,12 +401,12 @@ export function FilterSidebar({
                   <label className="block text-xs text-gray-500 mb-1">To</label>
                   <input
                     type="date"
-                    value={filters.dateTo ? filters.dateTo.toISOString().split('T')[0] : ''}
+                    value={pendingFilters.dateTo ? pendingFilters.dateTo.toISOString().split('T')[0] : ''}
                     onChange={(e) => updateFilter('dateTo', e.target.value ? new Date(e.target.value) : undefined)}
                     className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
-                {(filters.dateFrom || filters.dateTo) && (
+                {(pendingFilters.dateFrom || pendingFilters.dateTo) && (
                   <button
                     onClick={() => {
                       updateFilter('dateFrom', undefined);
@@ -392,20 +414,29 @@ export function FilterSidebar({
                     }}
                     className="text-xs text-blue-600 hover:text-blue-700"
                   >
-                    Clear date filter
+                    Clear
                   </button>
                 )}
               </div>
             )}
           </div>
+        </div>
 
-          {/* Clear All */}
-          {hasActiveFilters && (
+        {/* Sticky footer — Apply / Clear */}
+        <div className="sticky bottom-0 bg-white border-t border-gray-200 p-3 flex gap-2">
+          <button
+            onClick={handleApply}
+            disabled={!hasPendingChanges}
+            className="flex-1 py-2 px-4 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Apply
+          </button>
+          {(hasActiveFilters || hasPendingChanges) && (
             <button
-              onClick={onClearFilters}
-              className="w-full py-2 px-4 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors"
+              onClick={handleClearAll}
+              className="py-2 px-3 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
             >
-              Clear all filters
+              Clear
             </button>
           )}
         </div>

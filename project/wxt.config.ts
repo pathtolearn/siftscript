@@ -4,8 +4,8 @@ import { defineConfig } from 'wxt';
 export default defineConfig({
   modules: ['@wxt-dev/module-react'],
   manifest: {
-    name: 'YouTube Transcript Manager',
-    description: 'Save and manage YouTube transcripts locally',
+    name: 'VidSage',
+    description: 'Your YouTube research library. Save transcripts, search across all your videos, and discover how ideas connect.',
     version: '1.0.0',
     permissions: [
       'storage',
@@ -21,7 +21,7 @@ export default defineConfig({
     },
     action: {
       default_popup: 'popup.html',
-      default_title: 'YouTube Transcript Manager'
+      default_title: 'VidSage'
     },
     icons: {
       '16': 'icon/16.png',

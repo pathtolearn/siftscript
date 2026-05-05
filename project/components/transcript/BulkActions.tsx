@@ -7,7 +7,8 @@ import {
   Tag as TagIcon,
   X,
   Plus,
-  Minus
+  Minus,
+  GitCompare,
 } from 'lucide-react';
 import { categoryRepository } from '../../lib/db/repositories/categoryRepository';
 import { tagRepository } from '../../lib/db/repositories/tagRepository';
@@ -24,6 +25,7 @@ interface BulkActionsProps {
   onAddTags: (tagIds: string[]) => void;
   onRemoveTags: (tagIds: string[]) => void;
   onClearSelection: () => void;
+  onCrossAnalyze?: () => void;
 }
 
 export function BulkActions({
@@ -36,7 +38,8 @@ export function BulkActions({
   onChangeCategory,
   onAddTags,
   onRemoveTags,
-  onClearSelection
+  onClearSelection,
+  onCrossAnalyze
 }: BulkActionsProps) {
   const [showCategoryMenu, setShowCategoryMenu] = useState(false);
   const [showTagMenu, setShowTagMenu] = useState(false);
@@ -85,37 +88,41 @@ export function BulkActions({
         </span>
         <div className="w-px h-4 bg-gray-700" />
 
-        {/* Favorite */}
-        <button
-          onClick={onFavorite}
-          className="p-2 hover:bg-gray-800 rounded-full transition-colors"
-          title="Add to favorites"
-        >
-          <Heart className="w-4 h-4" />
-        </button>
-        <button
-          onClick={onUnfavorite}
-          className="p-2 hover:bg-gray-800 rounded-full transition-colors"
-          title="Remove from favorites"
-        >
-          <Heart className="w-4 h-4 text-gray-400" />
-        </button>
+        {/* Favorite / Unfavorite */}
+        <div className="flex items-center gap-0.5">
+          <button
+            onClick={onFavorite}
+            className="p-2 hover:bg-gray-800 rounded-full transition-colors"
+            title="Add to favorites"
+          >
+            <Heart className="w-4 h-4 text-red-400" />
+          </button>
+          <button
+            onClick={onUnfavorite}
+            className="p-2 hover:bg-gray-800 rounded-full transition-colors"
+            title="Remove from favorites"
+          >
+            <Heart className="w-4 h-4 text-gray-500" />
+          </button>
+        </div>
 
-        {/* Archive */}
-        <button
-          onClick={onArchive}
-          className="p-2 hover:bg-gray-800 rounded-full transition-colors"
-          title="Archive"
-        >
-          <Archive className="w-4 h-4" />
-        </button>
-        <button
-          onClick={onUnarchive}
-          className="p-2 hover:bg-gray-800 rounded-full transition-colors"
-          title="Unarchive"
-        >
-          <Archive className="w-4 h-4 text-gray-400" />
-        </button>
+        {/* Archive / Unarchive */}
+        <div className="flex items-center gap-0.5">
+          <button
+            onClick={onArchive}
+            className="p-2 hover:bg-gray-800 rounded-full transition-colors"
+            title="Archive"
+          >
+            <Archive className="w-4 h-4" />
+          </button>
+          <button
+            onClick={onUnarchive}
+            className="p-2 hover:bg-gray-800 rounded-full transition-colors"
+            title="Unarchive"
+          >
+            <Archive className="w-4 h-4 text-gray-500" />
+          </button>
+        </div>
 
         {/* Category */}
         <div className="relative">
@@ -255,6 +262,21 @@ export function BulkActions({
             </div>
           )}
         </div>
+
+        {/* Cross-Analyze */}
+        {onCrossAnalyze && selectedCount >= 2 && (
+          <>
+            <div className="w-px h-4 bg-gray-700" />
+            <button
+              onClick={onCrossAnalyze}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 rounded-full transition-colors text-sm font-medium"
+              title="Cross-analyze selected transcripts"
+            >
+              <GitCompare className="w-4 h-4" />
+              Cross-Analyze
+            </button>
+          </>
+        )}
 
         <div className="w-px h-4 bg-gray-700" />
 

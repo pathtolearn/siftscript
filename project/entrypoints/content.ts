@@ -1,9 +1,10 @@
 import { messaging } from '../lib/messaging/messaging';
-import { 
-  isYouTubeWatchPage, 
-  waitForVideoMetadata, 
+import {
+  isYouTubeWatchPage,
+  waitForVideoMetadata,
   setupPageChangeListener,
-  extractVideoContext
+  extractVideoContext,
+  getVideoIdFromUrl,
 } from '../lib/youtube/pageDetector';
 import { checkTranscriptAvailability, fetchTranscript } from '../lib/youtube/fetchTranscript';
 import type { GetCurrentVideoContextPayload, FetchTranscriptPayload } from '../lib/messaging/types';
@@ -20,10 +21,14 @@ export default defineContentScript({
 
     // Register message handlers for content script
     messaging.registerHandler('GET_CURRENT_VIDEO_CONTEXT', async (_payload: GetCurrentVideoContextPayload) => {
-      if (!currentContext) {
+      const currentVideoId = getVideoIdFromUrl();
+
+      // Re-fetch if we have no context OR if the URL has moved to a different video
+      if (!currentContext || currentContext.videoId !== currentVideoId) {
         currentContext = await waitForVideoMetadata();
+        transcriptInfo = null; // reset so availability is re-checked for the new video
       }
-      
+
       // Also check transcript availability
       if (currentContext && !transcriptInfo) {
         try {
@@ -37,8 +42,8 @@ export default defineContentScript({
           transcriptInfo = { available: false, languageCode: null };
         }
       }
-      
-      return { 
+
+      return {
         context: currentContext,
         transcriptAvailable: transcriptInfo?.available || false
       };

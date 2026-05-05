@@ -1,5 +1,6 @@
 import type { AIProvider, AISettings, Segment, RepurposeType } from '../../types';
 import { getSecureKey, saveSecureKey, removeSecureKey, SECURE_KEYS } from './secureStorage';
+import { callManagedAI, type ManagedAIType } from './managedAI';
 
 // Storage keys
 const AI_SETTINGS_KEY = 'ai_settings';
@@ -121,7 +122,7 @@ async function validateOllama(settings: AISettings): Promise<boolean> {
 }
 
 // Chunk transcript segments to fit within context windows
-function chunkSegments(segments: Segment[], maxCharsPerChunk: number = 12000): Segment[][] {
+export function chunkSegments(segments: Segment[], maxCharsPerChunk: number = 12000): Segment[][] {
   const chunks: Segment[][] = [];
   let currentChunk: Segment[] = [];
   let currentLength = 0;
@@ -172,7 +173,7 @@ export function sanitizeTranscriptText(text: string): string {
   return sanitized;
 }
 
-function formatSegmentsForPrompt(segments: Segment[]): string {
+export function formatSegmentsForPrompt(segments: Segment[]): string {
   return segments.map(s => {
     const seconds = Math.floor(s.startMs / 1000);
     const min = Math.floor(seconds / 60);
@@ -306,7 +307,19 @@ Respond in this exact JSON format:
 
 type AIResponseFormat = 'json' | 'text';
 
-async function callAI(prompt: string, settings: AISettings, format: AIResponseFormat = 'json'): Promise<string> {
+// Map call sites to managed AI usage type
+function toManagedType(settings: AISettings): ManagedAIType {
+  return 'ai_calls';
+}
+
+export async function callAI(prompt: string, settings: AISettings, format: AIResponseFormat = 'json'): Promise<string> {
+  // Route through managed AI when no BYOK key is configured
+  if (!settings.apiKey && settings.provider !== 'ollama') {
+    const providerMap: Record<string, string> = { google: 'gemini' };
+    const provider = providerMap[settings.provider] ?? settings.provider;
+    return callManagedAI(prompt, toManagedType(settings), provider, settings.model, format);
+  }
+
   const MAX_RETRIES = 3;
   const INITIAL_DELAY_MS = 1000;
 

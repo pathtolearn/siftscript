@@ -180,8 +180,18 @@ export function TranscriptDetail({ transcriptId, onBack }: TranscriptDetailProps
 
   async function handleToggleArchive() {
     if (!transcript) return;
-    await transcriptRepository.update(transcriptId, { archived: !transcript.archived });
-    setTranscript({ ...transcript, archived: !transcript.archived });
+    const nowArchived = !transcript.archived;
+    const newStatus = nowArchived ? 'archived' : 'unread';
+    await transcriptRepository.update(transcriptId, { archived: nowArchived, status: newStatus });
+    setTranscript({ ...transcript, archived: nowArchived, status: newStatus });
+  }
+
+  async function handleToggleRead() {
+    if (!transcript) return;
+    const isRead = transcript.status === 'reviewed' || transcript.status === 'in-review';
+    const newStatus = isRead ? 'unread' : 'reviewed';
+    await transcriptRepository.update(transcriptId, { status: newStatus });
+    setTranscript({ ...transcript, status: newStatus });
   }
 
   async function handleSaveNotes() {
@@ -614,6 +624,7 @@ export function TranscriptDetail({ transcriptId, onBack }: TranscriptDetailProps
         onBack={onBack}
         onToggleFavorite={handleToggleFavorite}
         onToggleArchive={handleToggleArchive}
+        onToggleRead={handleToggleRead}
         formatDate={formatDate}
       />
 

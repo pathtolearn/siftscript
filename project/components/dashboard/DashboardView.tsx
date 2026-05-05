@@ -3,11 +3,15 @@ import {
   Heart,
   Archive,
   FolderOpen,
-  Clock
+  Clock,
+  GitCompare,
+  Trash2,
+  Eye,
 } from 'lucide-react';
 import { GlobalSearch } from './GlobalSearch';
 import { BulkExtractPanel } from './BulkExtractPanel';
-import type { Transcript, Category, Video } from '../../types';
+import { CategoryManager } from './CategoryManager';
+import type { Transcript, Category, Video, CrossAnalysis } from '../../types';
 
 interface DashboardViewProps {
   stats: {
@@ -19,9 +23,15 @@ interface DashboardViewProps {
   categories: (Category & { count: number })[];
   onOpenDetail: (transcriptId: string) => void;
   onRefresh?: () => void;
+  onCreateCategory?: (name: string, colorToken: string) => Promise<void>;
+  onUpdateCategory?: (categoryId: string, name: string, colorToken: string) => Promise<void>;
+  onDeleteCategory?: (categoryId: string) => Promise<void>;
+  savedAnalyses?: CrossAnalysis[];
+  onViewAnalysis?: (analysis: CrossAnalysis) => void;
+  onDeleteAnalysis?: (analysisId: string) => void;
 }
 
-export function DashboardView({ stats, categories, onOpenDetail, onRefresh }: DashboardViewProps) {
+export function DashboardView({ stats, categories, onOpenDetail, onRefresh, onCreateCategory, onUpdateCategory, onDeleteCategory, savedAnalyses, onViewAnalysis, onDeleteAnalysis }: DashboardViewProps) {
   return (
     <div className="space-y-6">
       {/* Global Search */}
@@ -130,10 +140,13 @@ export function DashboardView({ stats, categories, onOpenDetail, onRefresh }: Da
             <FolderOpen className="w-5 h-5 text-gray-400" />
             Categories
           </h2>
-          {categories.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
-              <p>No categories yet</p>
-            </div>
+          {onCreateCategory && onUpdateCategory && onDeleteCategory ? (
+            <CategoryManager
+              categories={categories}
+              onCreateCategory={onCreateCategory}
+              onUpdateCategory={onUpdateCategory}
+              onDeleteCategory={onDeleteCategory}
+            />
           ) : (
             <div className="space-y-2">
               {categories.map((category) => (
@@ -159,6 +172,54 @@ export function DashboardView({ stats, categories, onOpenDetail, onRefresh }: Da
           )}
         </div>
       </div>
+      {/* Research / Cross-Video Analyses */}
+      {savedAnalyses && savedAnalyses.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <GitCompare className="w-5 h-5 text-indigo-500" />
+            Cross-Video Research
+          </h2>
+          <div className="space-y-3">
+            {savedAnalyses.map((analysis) => (
+              <div
+                key={analysis.crossAnalysisId}
+                className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900">
+                    {analysis.themes.length > 0
+                      ? analysis.themes.map(t => t.theme).slice(0, 3).join(', ')
+                      : 'Cross-Video Analysis'}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {analysis.transcriptIds.length} videos • {analysis.themes.length} themes • {new Date(analysis.createdAt).toLocaleDateString()}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1 ml-3">
+                  {onViewAnalysis && (
+                    <button
+                      onClick={() => onViewAnalysis(analysis)}
+                      className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
+                      title="View analysis"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </button>
+                  )}
+                  {onDeleteAnalysis && (
+                    <button
+                      onClick={() => onDeleteAnalysis(analysis.crossAnalysisId)}
+                      className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                      title="Delete analysis"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
